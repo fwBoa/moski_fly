@@ -41,7 +41,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     const pipesRef = useRef<Pipe[]>([]);
     const groundOffsetRef = useRef(0);
 
-    // Load sprites
+    // Load sprites and background
     useEffect(() => {
         const sprites = ['/sprites/v1.png', '/sprites/v2.png', '/sprites/v3.png'];
         sprites.forEach((src, i) => {
@@ -51,20 +51,38 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         });
     }, []);
 
+    // Background image ref
+    const backgroundRef = useRef<HTMLImageElement | null>(null);
+
+    useEffect(() => {
+        const bg = new Image();
+        bg.src = '/sprites/background.png';
+        backgroundRef.current = bg;
+    }, []);
+
     // Handle responsive canvas sizing
     useEffect(() => {
         const updateSize = () => {
             if (containerRef.current) {
                 const container = containerRef.current;
-                const aspectRatio = 9 / 16;
-
+                // Fill the container completely
                 let width = container.clientWidth;
                 let height = container.clientHeight;
 
-                if (width / height > aspectRatio) {
-                    width = height * aspectRatio;
+                // Adjust aspect ratio to ensure gameplay area fits but background covers full screen
+                // We prioritize filling width on mobile
+                const targetRatio = 9 / 16;
+                const containerRatio = width / height;
+
+                if (containerRatio > targetRatio) {
+                    // Container is wider than target (desktop/tablet landscape)
+                    // Limit width to maintain max aspect ratio
+                    width = height * targetRatio;
                 } else {
-                    height = width / aspectRatio;
+                    // Container is taller/narrower (mobile portrait)
+                    // Use full width/height provided by container
+                    // Game logic will handle physics/rendering within this new size
+                    // This removes the fake border/letterboxing
                 }
 
                 setCanvasSize({ width: Math.floor(width), height: Math.floor(height) });
@@ -132,7 +150,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         const { width, height } = canvas;
 
         // Update ground scroll
-        groundOffsetRef.current = (groundOffsetRef.current + config.pipeSpeed * (deltaTime / 16.67)) % 24;
+        groundOffsetRef.current = (groundOffsetRef.current + config.pipeSpeed * (deltaTime / 16.67)) % 48;
 
         // Update player physics
         playerRef.current = applyGravity(playerRef.current, config, deltaTime);
@@ -164,25 +182,26 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
 
-        // Sky - bright blue gradient
-        const skyGradient = ctx.createLinearGradient(0, 0, 0, height - groundHeight);
-        skyGradient.addColorStop(0, '#4EC0CA');
-        skyGradient.addColorStop(1, '#71C5CF');
-        ctx.fillStyle = skyGradient;
-        ctx.fillRect(0, 0, width, height - groundHeight);
+        // Draw background image
+        const bg = backgroundRef.current;
+        if (bg && bg.complete) {
+            // Draw the background scaled to fit the canvas, but shifted up slightly to hide its static ground
+            // We want the sky/hills part to be visible
+            ctx.imageSmoothingEnabled = false;
 
-        // Simple clouds
-        ctx.fillStyle = '#ffffff';
-        drawCloud(ctx, 50, 80, 40);
-        drawCloud(ctx, 180, 120, 30);
-        drawCloud(ctx, 300, 70, 35);
-        drawCloud(ctx, 120, 200, 25);
-        drawCloud(ctx, 280, 180, 32);
+            // Draw background to cover the whole screen, potentially cropping bottom
+            // or just draw it behind everything
+            ctx.drawImage(bg, 0, 0, width, height);
+        } else {
+            // Fallback solid color while loading
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, width, height);
+        }
 
         // Draw pipes
         drawPipes(ctx, width, height, groundHeight);
 
-        // Draw ground
+        // Draw scrolling ground (restored!)
         drawGround(ctx, width, height, groundHeight);
 
         // Draw player
@@ -191,12 +210,61 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         }
     };
 
+    // Draw static clouds
+    const drawClouds = (ctx: CanvasRenderingContext2D, width: number) => {
+        // Static cloud positions
+        const clouds = [
+            { x: 40, y: 70, scale: 1.0 },
+            { x: 180, y: 45, scale: 0.8 },
+            { x: 300, y: 90, scale: 1.2 },
+            { x: 120, y: 130, scale: 0.6 },
+            { x: 260, y: 55, scale: 0.7 },
+        ];
+
+        for (const cloud of clouds) {
+            drawCloud(ctx, cloud.x, cloud.y, 28 * cloud.scale);
+        }
+    };
+
+    // Draw a single fluffy cloud
     const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
+        ctx.fillStyle = '#ffffff';
+
+        // Fluffy cloud shape with multiple overlapping circles
         ctx.beginPath();
-        ctx.arc(x, y, size * 0.6, 0, Math.PI * 2);
-        ctx.arc(x + size * 0.5, y - size * 0.2, size * 0.5, 0, Math.PI * 2);
-        ctx.arc(x + size, y, size * 0.6, 0, Math.PI * 2);
-        ctx.arc(x + size * 0.5, y + size * 0.2, size * 0.4, 0, Math.PI * 2);
+        ctx.arc(x, y, size * 0.5, 0, Math.PI * 2);
+        ctx.arc(x + size * 0.35, y - size * 0.2, size * 0.4, 0, Math.PI * 2);
+        ctx.arc(x + size * 0.7, y - size * 0.1, size * 0.45, 0, Math.PI * 2);
+        ctx.arc(x + size * 1.0, y, size * 0.4, 0, Math.PI * 2);
+        ctx.arc(x + size * 0.5, y + size * 0.1, size * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+    };
+
+    // Draw distant hills for depth
+    const drawDistantHills = (ctx: CanvasRenderingContext2D, width: number, groundY: number) => {
+        // Far hills - light green
+        ctx.fillStyle = '#90C695';
+        ctx.beginPath();
+        ctx.moveTo(0, groundY);
+        ctx.lineTo(0, groundY - 40);
+        ctx.quadraticCurveTo(60, groundY - 70, 120, groundY - 35);
+        ctx.quadraticCurveTo(180, groundY - 55, 240, groundY - 30);
+        ctx.quadraticCurveTo(300, groundY - 60, 360, groundY - 25);
+        ctx.quadraticCurveTo(400, groundY - 45, width, groundY - 30);
+        ctx.lineTo(width, groundY);
+        ctx.closePath();
+        ctx.fill();
+
+        // Near hills - darker green
+        ctx.fillStyle = '#6B8E6B';
+        ctx.beginPath();
+        ctx.moveTo(0, groundY);
+        ctx.lineTo(0, groundY - 25);
+        ctx.quadraticCurveTo(80, groundY - 45, 150, groundY - 20);
+        ctx.quadraticCurveTo(220, groundY - 38, 280, groundY - 15);
+        ctx.quadraticCurveTo(340, groundY - 35, width, groundY - 18);
+        ctx.lineTo(width, groundY);
+        ctx.closePath();
         ctx.fill();
     };
 
@@ -280,28 +348,41 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     const drawGround = (ctx: CanvasRenderingContext2D, width: number, height: number, groundHeight: number) => {
         const y = height - groundHeight;
 
-        // Ground base - sandy color
-        ctx.fillStyle = '#DED895';
+        // Ground base - dirt brown from background image
+        ctx.fillStyle = '#E5B083'; // Light brownish/tan
         ctx.fillRect(0, y, width, groundHeight);
 
-        // Grass strip on top
-        ctx.fillStyle = '#5DBE4A';
-        ctx.fillRect(0, y, width, 15);
+        // Grass strip on top - matching the hills
+        ctx.fillStyle = '#6BAE5C'; // Green
+        ctx.fillRect(0, y, width, 18);
 
-        // Grass highlight
-        ctx.fillStyle = '#7ED321';
-        ctx.fillRect(0, y, width, 5);
+        // Grass highlight - lighter green
+        ctx.fillStyle = '#88D56F';
+        ctx.fillRect(0, y, width, 6);
 
-        // Dirt pattern - scrolling
-        ctx.fillStyle = '#C4A86B';
+        // Dirt detailed pattern - scrolling
+        ctx.fillStyle = '#C48E66'; // Darker brown for details
         const offset = groundOffsetRef.current;
         for (let i = -1; i < Math.ceil(width / 24) + 1; i++) {
             const x = i * 24 - offset;
-            // Simple dirt stripe pattern
-            ctx.fillRect(x, y + 20, 12, 4);
-            ctx.fillRect(x + 12, y + 35, 12, 4);
-            ctx.fillRect(x, y + 50, 12, 4);
-            ctx.fillRect(x + 12, y + 65, 12, 4);
+
+            // Zig-zag / checker pattern for dirt
+            ctx.fillRect(x, y + 25, 4, 4);
+            ctx.fillRect(x + 12, y + 25, 4, 4);
+
+            ctx.fillRect(x + 6, y + 35, 4, 4);
+            ctx.fillRect(x + 18, y + 35, 4, 4);
+
+            ctx.fillRect(x, y + 45, 4, 4);
+            ctx.fillRect(x + 12, y + 45, 4, 4);
+
+            ctx.fillRect(x + 6, y + 55, 4, 4);
+            ctx.fillRect(x + 18, y + 55, 4, 4);
+
+            // Bottom darker area
+            ctx.fillStyle = '#A37250';
+            ctx.fillRect(x, y + 65, 24, 15);
+            ctx.fillStyle = '#C48E66'; // Reset needed if I change fillStyle inside loop
         }
     };
 
@@ -337,7 +418,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         const { width, height } = canvas;
 
         // Slow ground scroll
-        groundOffsetRef.current = (groundOffsetRef.current + 0.5) % 24;
+        groundOffsetRef.current = (groundOffsetRef.current + 0.5) % 48;
 
         // Floating animation for player
         if (!playerRef.current) {
@@ -357,56 +438,59 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     });
 
     return (
-        <div className="relative w-full h-full flex items-center justify-center bg-[#4EC0CA]">
+        <div className="relative w-full h-full bg-[#333] flex items-center justify-center overflow-hidden">
+            {/* Desktop container wrapper */}
             <div
                 ref={containerRef}
-                className="relative w-full h-full max-w-lg mx-auto flex items-center justify-center"
+                className="relative w-full h-full max-w-[480px] bg-[#4EC0CA] shadow-2xl"
             >
-                <canvas
-                    ref={canvasRef}
-                    width={canvasSize.width}
-                    height={canvasSize.height}
-                    onClick={handleFlap}
-                    onTouchStart={(e) => {
-                        e.preventDefault();
-                        handleFlap();
-                    }}
-                    className="cursor-pointer shadow-2xl"
-                    style={{
-                        width: canvasSize.width,
-                        height: canvasSize.height,
-                        imageRendering: 'pixelated',
-                    }}
-                />
+                <div className="absolute inset-0 w-full h-full">
+                    <canvas
+                        ref={canvasRef}
+                        width={canvasSize.width}
+                        height={canvasSize.height}
+                        onClick={handleFlap}
+                        onTouchStart={(e) => {
+                            e.preventDefault();
+                            handleFlap();
+                        }}
+                        className="block touch-none select-none outline-none"
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            imageRendering: 'pixelated',
+                        }}
+                    />
 
-                <GameOverlay
-                    gameState={gameState}
-                    score={score}
-                    highScore={highScore}
-                    onStart={startGame}
-                />
+                    <GameOverlay
+                        gameState={gameState}
+                        score={score}
+                        highScore={highScore}
+                        onStart={startGame}
+                    />
 
-                {/* Score HUD during gameplay */}
-                {gameState === 'PLAYING' && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-                        <div
-                            className="text-6xl font-bold text-white font-mono"
-                            style={{
-                                textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
-                            }}
-                        >
-                            {score}
+                    {/* Score HUD during gameplay */}
+                    {gameState === 'PLAYING' && (
+                        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 pointer-events-none select-none">
+                            <div
+                                className="text-6xl font-bold text-white font-mono"
+                                style={{
+                                    textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
+                                }}
+                            >
+                                {score}
+                            </div>
                         </div>
-                    </div>
+                    )}
+                </div>
+
+                {devMode && (
+                    <DevPanel
+                        config={config}
+                        onConfigChange={setConfig}
+                    />
                 )}
             </div>
-
-            {devMode && (
-                <DevPanel
-                    config={config}
-                    onConfigChange={setConfig}
-                />
-            )}
         </div>
     );
 }

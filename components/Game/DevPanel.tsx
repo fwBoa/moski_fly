@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { GameConfig, DEFAULT_CONFIG } from './Physics';
 
 interface DevPanelProps {
@@ -8,6 +9,8 @@ interface DevPanelProps {
 }
 
 export default function DevPanel({ config, onConfigChange }: DevPanelProps) {
+    const [isOpen, setIsOpen] = useState(false);
+
     const handleChange = (key: keyof GameConfig, value: number) => {
         onConfigChange({ ...config, [key]: value });
     };
@@ -16,18 +19,38 @@ export default function DevPanel({ config, onConfigChange }: DevPanelProps) {
         onConfigChange(DEFAULT_CONFIG);
     };
 
+    if (!isOpen) {
+        return (
+            <button
+                onClick={() => setIsOpen(true)}
+                className="fixed right-4 top-4 w-12 h-12 bg-[#DED895] border-4 border-[#543847] rounded-xl flex items-center justify-center shadow-lg z-50 hover:scale-110 transition-transform cursor-pointer"
+                title="Open Dev Tools"
+            >
+                <span className="text-xl">🛠️</span>
+            </button>
+        );
+    }
+
     return (
-        <div className="fixed right-4 top-4 w-64 bg-[#DED895] border-4 border-[#543847] rounded-xl p-4 shadow-lg z-50">
+        <div className="fixed right-4 top-4 w-64 md:w-80 bg-[#DED895] border-4 border-[#543847] rounded-xl p-4 shadow-lg z-50 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[#543847] font-bold text-sm uppercase tracking-wider">
+                <h3 className="text-[#543847] font-bold text-sm uppercase tracking-wider flex items-center gap-2">
                     🛠️ Dev Mode
                 </h3>
-                <button
-                    onClick={reset}
-                    className="text-xs px-2 py-1 bg-[#5DBE4A] hover:bg-[#4CAF3A] rounded text-white font-bold transition-colors border-b-2 border-[#3D8B32]"
-                >
-                    Reset
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={reset}
+                        className="text-xs px-2 py-1 bg-[#5DBE4A] hover:bg-[#4CAF3A] rounded text-white font-bold transition-colors border-b-2 border-[#3D8B32]"
+                    >
+                        Reset
+                    </button>
+                    <button
+                        onClick={() => setIsOpen(false)}
+                        className="text-xs px-2 py-1 bg-[#EB9F9F] hover:bg-[#E57373] rounded text-[#543847] font-bold transition-colors border-b-2 border-[#C25B5B]"
+                    >
+                        ✕
+                    </button>
+                </div>
             </div>
 
             <div className="space-y-3">
