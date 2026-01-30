@@ -65,27 +65,13 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         const updateSize = () => {
             if (containerRef.current) {
                 const container = containerRef.current;
-                // Fill the container completely
-                let width = container.clientWidth;
-                let height = container.clientHeight;
+                // Use exact container dimensions
+                const width = container.clientWidth;
+                const height = container.clientHeight;
 
-                // Adjust aspect ratio to ensure gameplay area fits but background covers full screen
-                // We prioritize filling width on mobile
-                const targetRatio = 9 / 16;
-                const containerRatio = width / height;
-
-                if (containerRatio > targetRatio) {
-                    // Container is wider than target (desktop/tablet landscape)
-                    // Limit width to maintain max aspect ratio
-                    width = height * targetRatio;
-                } else {
-                    // Container is taller/narrower (mobile portrait)
-                    // Use full width/height provided by container
-                    // Game logic will handle physics/rendering within this new size
-                    // This removes the fake border/letterboxing
+                if (width > 0 && height > 0) {
+                    setCanvasSize({ width, height });
                 }
-
-                setCanvasSize({ width: Math.floor(width), height: Math.floor(height) });
             }
         };
 
@@ -363,7 +349,8 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Dirt detailed pattern - scrolling
         ctx.fillStyle = '#C48E66'; // Darker brown for details
         const offset = groundOffsetRef.current;
-        for (let i = -1; i < Math.ceil(width / 24) + 1; i++) {
+        // Increase loop range to cover the max offset (48px = 2 tiles) plus buffer
+        for (let i = -1; i < Math.ceil(width / 24) + 3; i++) {
             const x = i * 24 - offset;
 
             // Zig-zag / checker pattern for dirt
@@ -409,6 +396,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         ctx.restore();
     };
 
+    // Time ref for animations (avoids hydration issues with Date.now())
+    const animTimeRef = useRef(0);
+
     // Idle animation/render when not playing
     const idleUpdate = useCallback((deltaTime: number) => {
         const canvas = canvasRef.current;
@@ -417,6 +407,10 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
         const { width, height } = canvas;
 
+        // Update animation time
+        animTimeRef.current += deltaTime;
+        const time = animTimeRef.current;
+
         // Slow ground scroll
         groundOffsetRef.current = (groundOffsetRef.current + 0.5) % 48;
 
@@ -424,10 +418,10 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         if (!playerRef.current) {
             playerRef.current = createPlayer(width, height);
         }
-        const floatY = Math.sin(Date.now() / 500) * 10;
+        const floatY = Math.sin(time / 500) * 10;
         playerRef.current.y = height * 0.4 + floatY;
-        playerRef.current.rotation = Math.sin(Date.now() / 800) * 5;
-        playerRef.current.velocity = Math.sin(Date.now() / 300) * 5;
+        playerRef.current.rotation = Math.sin(time / 800) * 5;
+        playerRef.current.velocity = Math.sin(time / 300) * 5;
 
         render(ctx, width, height);
     }, []);
@@ -438,11 +432,11 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     });
 
     return (
-        <div className="relative w-full h-full bg-[#333] flex items-center justify-center overflow-hidden">
+        <div className="relative w-full h-full bg-[#4EC0CA] flex items-center justify-center overflow-hidden">
             {/* Desktop container wrapper */}
             <div
                 ref={containerRef}
-                className="relative w-full h-full max-w-[480px] bg-[#4EC0CA] shadow-2xl"
+                className="relative w-full h-full max-w-[480px] bg-[#4EC0CA]"
             >
                 <div className="absolute inset-0 w-full h-full">
                     <canvas
