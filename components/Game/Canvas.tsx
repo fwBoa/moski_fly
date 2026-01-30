@@ -443,8 +443,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                         ref={canvasRef}
                         width={canvasSize.width}
                         height={canvasSize.height}
-                        onClick={handleFlap}
-                        onTouchStart={(e) => {
+                        onPointerDown={(e) => {
                             e.preventDefault();
                             handleFlap();
                         }}
