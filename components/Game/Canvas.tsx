@@ -7,6 +7,8 @@ import {
     GameConfig,
     Player,
     Pipe,
+    Coin,
+    CoinType,
     createPlayer,
     applyGravity,
     applyFlap,
@@ -14,7 +16,12 @@ import {
     checkCollision,
     checkScore,
     getAnimationFrame,
+    createCoinInGap,
+    updateCoins,
+    checkCoinCollection,
 } from './Physics';
+import { resumeAudio, playCoinSound, playDiamondSound, playPipeSound, playFlapSound, playGameOverSound, bgMusic } from './SoundManager';
+import { loadStats, saveGameResult, resetStats, GameStats } from './StatsManager';
 import DevPanel from './DevPanel';
 import GameOverlay from './GameOverlay';
 
@@ -32,14 +39,40 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
     // Game state
     const [gameState, setGameState] = useState<GameState>('START');
-    const [score, setScore] = useState(0);
+    const [pipeScore, setPipeScore] = useState(0);
+    const [coinScore, setCoinScore] = useState(0);
     const [highScore, setHighScore] = useState(0);
     const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [coinFlash, setCoinFlash] = useState(false);
+    const [coinCombo, setCoinCombo] = useState(0);
+    const [showCombo, setShowCombo] = useState(false);
+    const [showStats, setShowStats] = useState(false);
+    const [stats, setStats] = useState<GameStats | null>(null);
+    const [showUpdateNote, setShowUpdateNote] = useState(false);
+
+    // Per-game tracking refs
+    const diamondsCollectedRef = useRef(0);
+    const maxComboRef = useRef(0);
+
+    // Flying coins animation
+    interface FlyingCoin {
+        x: number;
+        y: number;
+        startX: number;
+        startY: number;
+        progress: number;
+        type: CoinType;
+    }
+    const flyingCoinsRef = useRef<FlyingCoin[]>([]);
 
     // Game objects (using refs for real-time updates in animation loop)
     const playerRef = useRef<Player | null>(null);
     const pipesRef = useRef<Pipe[]>([]);
+    const coinsRef = useRef<Coin[]>([]);
     const groundOffsetRef = useRef(0);
+    const coinSpriteRef = useRef<HTMLImageElement | null>(null);
+    const diamondSpriteRef = useRef<HTMLImageElement | null>(null);
 
     // Load sprites and background
     useEffect(() => {
@@ -49,6 +82,14 @@ export default function Canvas({ devMode = false }: CanvasProps) {
             img.src = src;
             spritesRef.current[i] = img;
         });
+        // Load coin sprite
+        const coinImg = new Image();
+        coinImg.src = '/sprites/coin.png';
+        coinSpriteRef.current = coinImg;
+        // Load diamond sprite
+        const diamondImg = new Image();
+        diamondImg.src = '/sprites/diamond.png';
+        diamondSpriteRef.current = diamondImg;
     }, []);
 
     // Background image ref
@@ -80,25 +121,54 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         return () => window.removeEventListener('resize', updateSize);
     }, []);
 
+    // Load stats from localStorage on mount
+    useEffect(() => {
+        const saved = loadStats();
+        setStats(saved);
+        setHighScore(saved.bestTotal);
+
+        // Show update note once per version
+        const UPDATE_VERSION = 'v1.1';
+        const seenVersion = localStorage.getItem('moski_update_seen');
+        if (seenVersion !== UPDATE_VERSION) {
+            setShowUpdateNote(true);
+        }
+    }, []);
+
     // Initialize/reset game
     const resetGame = useCallback(() => {
         playerRef.current = createPlayer(canvasSize.width, canvasSize.height);
         pipesRef.current = [];
+        coinsRef.current = [];
+        flyingCoinsRef.current = [];
         groundOffsetRef.current = 0;
-        setScore(0);
+        diamondsCollectedRef.current = 0;
+        maxComboRef.current = 0;
+        setPipeScore(0);
+        setCoinScore(0);
+        setCoinCombo(0);
+        setShowCombo(false);
     }, [canvasSize]);
 
     // Start game
     const startGame = useCallback(() => {
+        resumeAudio();
         resetGame();
         setGameState('PLAYING');
-    }, [resetGame]);
+        if (soundEnabled) {
+            bgMusic.start();
+        }
+    }, [resetGame, soundEnabled]);
 
     // Game over
     const gameOver = useCallback(() => {
         setGameState('GAME_OVER');
-        setHighScore(prev => Math.max(prev, score));
-    }, [score]);
+        const updatedStats = saveGameResult(pipeScore, coinScore, diamondsCollectedRef.current, maxComboRef.current);
+        setStats(updatedStats);
+        setHighScore(updatedStats.bestTotal);
+        bgMusic.stop();
+        if (soundEnabled) playGameOverSound();
+    }, [pipeScore, coinScore, soundEnabled]);
 
     // Handle input
     const handleFlap = useCallback(() => {
@@ -109,6 +179,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
             }
         } else if (gameState === 'PLAYING' && playerRef.current) {
             playerRef.current = applyFlap(playerRef.current, config);
+            if (soundEnabled) playFlapSound();
         } else if (gameState === 'GAME_OVER') {
             startGame();
         }
@@ -144,25 +215,90 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Update pipes
         pipesRef.current = updatePipes(pipesRef.current, config, width, height, deltaTime);
 
+        // Spawn coin in gap when new pipe is added (90% chance)
+        const currentLastPipe = pipesRef.current[pipesRef.current.length - 1];
+        if (currentLastPipe && currentLastPipe.x >= width - config.pipeSpeed && Math.random() < 0.9) {
+            // Check if this pipe already has a coin nearby
+            const hasCoinNearby = coinsRef.current.some(c => Math.abs(c.x - currentLastPipe.x) < 50);
+            if (!hasCoinNearby) {
+                const newCoin = createCoinInGap(currentLastPipe.x, currentLastPipe.gapY);
+                coinsRef.current.push(newCoin);
+            }
+        }
+
+        // Update coins
+        coinsRef.current = updateCoins(coinsRef.current, config, deltaTime);
+
+        // Check coin collection
+        const coinResult = checkCoinCollection(playerRef.current, coinsRef.current);
+        coinsRef.current = coinResult.coins;
+        if (coinResult.collected > 0) {
+            // Combo system
+            const newCombo = coinCombo + coinResult.collected;
+            setCoinCombo(newCombo);
+            maxComboRef.current = Math.max(maxComboRef.current, newCombo);
+
+            // Track diamonds
+            const diamondsInBatch = coinResult.collectedCoins.filter(c => c.type === 'rare').length;
+            diamondsCollectedRef.current += diamondsInBatch;
+            const multiplier = newCombo >= 3 ? 2 : 1;
+            setCoinScore(prev => prev + coinResult.totalValue * multiplier);
+
+            // Show combo indicator at 3+
+            if (newCombo >= 3) {
+                setShowCombo(true);
+                setTimeout(() => setShowCombo(false), 800);
+            }
+
+            // Sound: diamond vs normal
+            if (soundEnabled) {
+                const hasRare = coinResult.collectedCoins.some(c => c.type === 'rare');
+                if (hasRare) playDiamondSound();
+                else playCoinSound();
+            }
+
+            // Flash effect
+            setCoinFlash(true);
+            setTimeout(() => setCoinFlash(false), 300);
+
+            // Spawn flying coins toward HUD
+            coinResult.collectedCoins.forEach(cc => {
+                flyingCoinsRef.current.push({
+                    x: cc.x,
+                    y: cc.y,
+                    startX: cc.x,
+                    startY: cc.y,
+                    progress: 0,
+                    type: cc.type,
+                });
+            });
+        }
+
+        // Update flying coins
+        flyingCoinsRef.current = flyingCoinsRef.current
+            .map(fc => ({ ...fc, progress: fc.progress + deltaTime * 0.003 }))
+            .filter(fc => fc.progress < 1);
+
         // Check collision
         if (checkCollision(playerRef.current, pipesRef.current, config, height)) {
             gameOver();
             return;
         }
 
-        // Check score
+        // Check score (passing pipe)
         const scoreResult = checkScore(playerRef.current, pipesRef.current);
         pipesRef.current = scoreResult.pipes;
         if (scoreResult.scored) {
-            setScore(prev => prev + 1);
+            setPipeScore(prev => prev + 1);
+            if (soundEnabled) playPipeSound();
         }
 
         // Render
-        render(ctx, width, height);
+        render(ctx, width, height, deltaTime);
     }, [config, gameOver]);
 
     // Render function - Classic Flappy Bird Style
-    const render = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const render = (ctx: CanvasRenderingContext2D, width: number, height: number, deltaTime?: number) => {
         const groundHeight = 80;
 
         // Clear canvas
@@ -186,6 +322,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
         // Draw pipes
         drawPipes(ctx, width, height, groundHeight);
+
+        // Draw coins
+        drawCoins(ctx);
 
         // Draw scrolling ground (restored!)
         drawGround(ctx, width, height, groundHeight);
@@ -373,6 +512,72 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         }
     };
 
+    // Draw coins with bobbing animation
+    const drawCoins = (ctx: CanvasRenderingContext2D) => {
+        const coinSprite = coinSpriteRef.current;
+        const diamondSprite = diamondSpriteRef.current;
+        if (!coinSprite || !coinSprite.complete) return;
+
+        const time = animTimeRef.current;
+        ctx.imageSmoothingEnabled = false;
+
+        for (const coin of coinsRef.current) {
+            if (coin.collected) continue;
+
+            const isRare = coin.type === 'rare';
+            const coinSize = isRare ? 90 : 80;
+            const sprite = (isRare && diamondSprite?.complete) ? diamondSprite : coinSprite;
+
+            // Bobbing animation
+            const bobOffset = Math.sin(time / 200 + coin.x * 0.01) * 6;
+
+            ctx.save();
+            ctx.translate(coin.x, coin.y + bobOffset);
+
+            // Pulse scale
+            const scale = 1 + Math.sin(time / 150 + coin.x * 0.02) * 0.1;
+            ctx.scale(scale, scale);
+
+            // Draw coin with correct sprite
+            ctx.drawImage(sprite, -coinSize / 2, -coinSize / 2, coinSize, coinSize);
+
+            ctx.restore();
+        }
+
+        // Draw flying coins (collection animation toward HUD)
+        for (const fc of flyingCoinsRef.current) {
+            const t = fc.progress;
+            // Ease-out curve
+            const ease = 1 - Math.pow(1 - t, 3);
+            // Target: top-right area (coin HUD position)
+            const targetX = ctx.canvas.width - 60;
+            const targetY = 40;
+            const x = fc.startX + (targetX - fc.startX) * ease;
+            const y = fc.startY + (targetY - fc.startY) * ease - Math.sin(t * Math.PI) * 50;
+            const fSize = 30 * (1 - t * 0.5);
+            const alpha = 1 - t;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.translate(x, y);
+
+            if (fc.type === 'rare') {
+                ctx.shadowColor = '#00FFFF';
+                ctx.shadowBlur = 10;
+            } else {
+                ctx.shadowColor = '#FFD700';
+                ctx.shadowBlur = 8;
+            }
+
+            if (fc.type === 'rare' && diamondSprite?.complete) {
+                ctx.drawImage(diamondSprite, -fSize / 2, -fSize / 2, fSize, fSize);
+            } else if (coinSprite.complete) {
+                ctx.drawImage(coinSprite, -fSize / 2, -fSize / 2, fSize, fSize);
+            }
+            ctx.restore();
+        }
+    };
+
     const drawPlayer = (ctx: CanvasRenderingContext2D, player: Player) => {
         const sprite = spritesRef.current[getAnimationFrame(player.velocity)];
         if (!sprite || !sprite.complete) return;
@@ -457,23 +662,119 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
                     <GameOverlay
                         gameState={gameState}
-                        score={score}
+                        pipeScore={pipeScore}
+                        coinScore={coinScore}
                         highScore={highScore}
                         onStart={startGame}
+                        stats={stats}
+                        showStats={showStats}
+                        onToggleStats={() => setShowStats(s => !s)}
+                        onResetStats={() => {
+                            const fresh = resetStats();
+                            setStats(fresh);
+                            setHighScore(0);
+                            setShowStats(false);
+                        }}
                     />
+
+                    {/* Update note modal */}
+                    {showUpdateNote && gameState === 'START' && (
+                        <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/50 backdrop-blur-sm">
+                            <div className="bg-[#DED895] rounded-xl p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full"
+                                style={{ animation: 'pop-in 0.4s ease-out forwards' }}>
+                                <h2 className="text-xl font-bold mb-2 text-[#543847]">Quoi de neuf ? 🎉</h2>
+                                <p className="text-xs text-[#543847]/60 mb-3">v1.1</p>
+
+                                <div className="bg-[#C4A86B] rounded-lg p-3 mb-4 text-left space-y-2 text-sm text-[#543847]">
+                                    <p className="font-semibold">Nouveautés :</p>
+                                    <ul className="list-disc list-inside space-y-1 text-[#543847]/80 text-xs">
+                                        <li>Pièces & diamants à collecter</li>
+                                        <li>Système de combo (x2 à 3+)</li>
+                                        <li>Statistiques sauvegardées</li>
+                                        <li>Succès à débloquer (20 pts)</li>
+                                        <li>Animations et effets visuels</li>
+                                    </ul>
+                                </div>
+
+                                <button
+                                    onClick={() => {
+                                        setShowUpdateNote(false);
+                                        localStorage.setItem('moski_update_seen', 'v1.1');
+                                    }}
+                                    className="px-8 py-3 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1 w-full"
+                                >
+                                    C&apos;EST PARTI !
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Score HUD during gameplay */}
                     {gameState === 'PLAYING' && (
-                        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 pointer-events-none select-none">
-                            <div
-                                className="text-6xl font-bold text-white font-mono"
-                                style={{
-                                    textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
-                                }}
-                            >
-                                {score}
+                        <div className="absolute top-8 left-0 right-0 z-10 pointer-events-none select-none px-4">
+                            <div className="flex justify-between items-start max-w-[480px] mx-auto">
+                                {/* Pipe Score (left) */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-2xl">🚀</span>
+                                    <span
+                                        className="text-4xl font-bold text-white font-mono"
+                                        style={{
+                                            textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
+                                        }}
+                                    >
+                                        {pipeScore}
+                                    </span>
+                                </div>
+                                {/* Coin Score (right) */}
+                                <div
+                                    className="flex items-center gap-2 transition-transform duration-200"
+                                    style={{
+                                        transform: coinFlash ? 'scale(1.4)' : 'scale(1)',
+                                    }}
+                                >
+                                    <img src="/sprites/coin.png" alt="coin" style={{ width: 55, height: 55, imageRendering: 'pixelated' }} />
+                                    <span
+                                        className={`text-4xl font-bold font-mono transition-colors duration-200 ${coinFlash ? 'text-white' : 'text-yellow-300'}`}
+                                        style={{
+                                            textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
+                                        }}
+                                    >
+                                        {coinScore}
+                                    </span>
+                                </div>
                             </div>
+                            {/* Combo indicator */}
+                            {showCombo && coinCombo >= 3 && (
+                                <div className="flex justify-center mt-2 animate-bounce">
+                                    <span
+                                        className="text-xl font-bold text-orange-400 font-mono"
+                                        style={{
+                                            textShadow: '2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000',
+                                        }}
+                                    >
+                                        🔥 COMBO x{coinCombo}! ×2
+                                    </span>
+                                </div>
+                            )}
                         </div>
+                    )}
+
+                    {/* Sound Toggle Button */}
+                    {gameState !== 'START' && (
+                        <button
+                            onClick={() => {
+                                const newVal = !soundEnabled;
+                                setSoundEnabled(newVal);
+                                if (newVal && gameState === 'PLAYING') {
+                                    bgMusic.start();
+                                } else {
+                                    bgMusic.stop();
+                                }
+                            }}
+                            className="absolute bottom-4 right-4 z-50 w-10 h-10 flex items-center justify-center bg-black/40 rounded-full text-xl hover:bg-black/60 transition-colors"
+                        >
+                            {soundEnabled ? '🔊' : '🔇'}
+                        </button>
                     )}
                 </div>
 
