@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { GameStats } from './StatsManager';
+import { LeaderboardEntry, getTop30, getPseudo, checkPseudoAvailable } from './LeaderboardManager';
 
 type GameState = 'START' | 'PLAYING' | 'GAME_OVER';
 
@@ -15,6 +16,10 @@ interface GameOverlayProps {
     showStats: boolean;
     onToggleStats: () => void;
     onResetStats: () => void;
+    pseudo: string | null;
+    onSetPseudo: (pseudo: string) => void;
+    showLeaderboard: boolean;
+    onToggleLeaderboard: () => void;
 }
 
 // Count-up hook: animates a number from 0 to target
@@ -28,15 +33,14 @@ function useCountUp(target: number, duration: number = 800, active: boolean = tr
             setValue(target);
             return;
         }
-        setValue(0);
-        startTime.current = null;
 
+        startTime.current = null;
         const animate = (time: number) => {
-            if (!startTime.current) startTime.current = time;
+            if (startTime.current === null) startTime.current = time;
             const elapsed = time - startTime.current;
             const progress = Math.min(elapsed / duration, 1);
-            // Ease-out cubic
-            const eased = 1 - Math.pow(1 - progress, 3);
+            // Ease out quad
+            const eased = 1 - (1 - progress) * (1 - progress);
             setValue(Math.round(eased * target));
             if (progress < 1) {
                 rafId.current = requestAnimationFrame(animate);
@@ -53,6 +57,7 @@ function useCountUp(target: number, duration: number = 800, active: boolean = tr
 export default function GameOverlay({
     gameState, pipeScore, coinScore, highScore, onStart,
     stats, showStats, onToggleStats, onResetStats,
+    pseudo, onSetPseudo, showLeaderboard, onToggleLeaderboard,
 }: GameOverlayProps) {
     if (gameState === 'PLAYING') return null;
 
@@ -66,6 +71,26 @@ export default function GameOverlay({
 
     // Check if achievement just unlocked this game
     const justUnlocked20 = isGameOver && totalScore >= 20 && stats && stats.achievement20;
+
+    // Pseudo input state
+    const [pseudoInput, setPseudoInput] = useState('');
+    const [pseudoError, setPseudoError] = useState('');
+    const [checkingPseudo, setCheckingPseudo] = useState(false);
+
+    // Leaderboard state
+    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [loadingLb, setLoadingLb] = useState(false);
+
+    // Load leaderboard when shown
+    useEffect(() => {
+        if (showLeaderboard) {
+            setLoadingLb(true);
+            getTop30().then(entries => {
+                setLeaderboard(entries);
+                setLoadingLb(false);
+            });
+        }
+    }, [showLeaderboard]);
 
     // CSS animations
     const animStyles = (
@@ -94,77 +119,191 @@ export default function GameOverlay({
         `}</style>
     );
 
-    // Stats Modal
+    // ========================================
+    // PSEUDO MODAL (first launch, no pseudo)
+    // ========================================
+    const handlePseudoSubmit = async () => {
+        const trimmed = pseudoInput.trim();
+        if (trimmed.length < 1) return;
+
+        setPseudoError('');
+        setCheckingPseudo(true);
+
+        const available = await checkPseudoAvailable(trimmed);
+        setCheckingPseudo(false);
+
+        if (!available) {
+            setPseudoError('Ce pseudo est déjà pris !');
+            return;
+        }
+
+        onSetPseudo(trimmed);
+    };
+
+    if (!pseudo) {
+        return (
+            <>
+                {animStyles}
+                <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-[#DED895] rounded-xl p-4 sm:p-6 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
+                        <h2 className="text-xl sm:text-2xl font-bold mb-2 text-[#543847]">Choisis ton pseudo ✏️</h2>
+                        <p className="text-[#543847]/70 text-xs mb-4">Visible sur le leaderboard</p>
+
+                        <input
+                            type="text"
+                            value={pseudoInput}
+                            onChange={(e) => {
+                                setPseudoInput(e.target.value.slice(0, 15));
+                                setPseudoError('');
+                            }}
+                            placeholder="Ton pseudo..."
+                            maxLength={15}
+                            className={`w-full px-4 py-3 rounded-lg bg-white/80 border-2 ${pseudoError ? 'border-red-500' : 'border-[#543847]/30'} text-[#543847] font-bold text-center text-lg outline-none focus:border-[#5DBE4A] transition-colors mb-1`}
+                            autoFocus
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handlePseudoSubmit();
+                            }}
+                        />
+                        {pseudoError ? (
+                            <p className="text-red-600 text-xs font-bold mb-3">{pseudoError}</p>
+                        ) : (
+                            <p className="text-[#543847]/50 text-xs mb-4">{pseudoInput.length}/15</p>
+                        )}
+
+                        <button
+                            onClick={handlePseudoSubmit}
+                            disabled={pseudoInput.trim().length < 1 || checkingPseudo}
+                            className="px-8 py-3 bg-[#5DBE4A] hover:bg-[#4CAF3A] disabled:bg-gray-400 text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] disabled:border-gray-500 active:border-b-0 active:mt-1 w-full"
+                        >
+                            {checkingPseudo ? 'Vérification...' : "C'EST PARTI !"}
+                        </button>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+    // ========================================
+    // LEADERBOARD MODAL (top 30)
+    // ========================================
+    if (showLeaderboard) {
+        const currentPseudo = getPseudo();
+        return (
+            <>
+                {animStyles}
+                <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
+                        <h2 className="text-xl sm:text-2xl font-bold mb-3 text-[#543847]">🏆 TOP 30</h2>
+
+                        <div className="bg-[#C4A86B] rounded-lg p-2 mb-3 max-h-[55vh] overflow-y-auto">
+                            {loadingLb ? (
+                                <p className="text-[#543847]/70 text-sm py-4">Chargement...</p>
+                            ) : leaderboard.length === 0 ? (
+                                <p className="text-[#543847]/70 text-sm py-4">Aucun score pour le moment !</p>
+                            ) : (
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-[#543847]/60 text-xs">
+                                            <th className="text-left py-1 pl-2">#</th>
+                                            <th className="text-left py-1">Joueur</th>
+                                            <th className="text-right py-1 pr-2">Score</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {leaderboard.map((entry, i) => {
+                                            const isMe = currentPseudo && entry.pseudo.toLowerCase() === currentPseudo.toLowerCase();
+                                            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
+                                            return (
+                                                <tr
+                                                    key={i}
+                                                    className={`border-t border-[#543847]/10 ${isMe ? 'bg-[#FFD700]/30 font-bold' : ''}`}
+                                                >
+                                                    <td className="text-left py-1.5 pl-2">{medal}</td>
+                                                    <td className={`text-left py-1.5 ${isMe ? 'text-[#543847]' : 'text-[#543847]/80'}`}>
+                                                        {entry.pseudo}
+                                                        {isMe && <span className="ml-1 text-xs">👈</span>}
+                                                    </td>
+                                                    <td className="text-right py-1.5 pr-2 font-bold text-[#543847]">{entry.score}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={onToggleLeaderboard}
+                            className="px-6 py-2 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1 w-full"
+                        >
+                            RETOUR
+                        </button>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+    // ========================================
+    // STATS MODAL
+    // ========================================
     if (showStats && stats) {
         return (
             <>
                 {animStyles}
                 <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
-                    <div className="bg-[#DED895] rounded-xl p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
-                        <h2 className="text-2xl font-bold mb-3 text-[#543847]">STATISTIQUES</h2>
+                    <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
+                        <h2 className="text-xl sm:text-2xl font-bold mb-3 text-[#543847]">STATISTIQUES</h2>
 
-                        <div className="bg-[#C4A86B] rounded-lg p-3 mb-3 text-left space-y-2">
+                        <div className="bg-[#C4A86B] rounded-lg p-2 sm:p-3 mb-3 text-left space-y-2">
                             {/* Games played */}
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm">Parties</span>
                                 <span className="font-bold text-[#543847]">{stats.totalGames}</span>
                             </div>
-
-                            <div className="border-t border-[#543847]/20 pt-2">
-                                <p className="text-xs font-semibold text-[#543847]/50 mb-1">RECORDS</p>
-                            </div>
-
-                            {/* Best scores */}
+                            {/* Bests */}
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">Meilleur score</span>
-                                <span className="font-bold text-[#543847]">{stats.bestTotal}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">Meilleur parcours</span>
+                                <span className="text-[#543847]/70 text-sm">🚀 Meilleur parcours</span>
                                 <span className="font-bold text-[#543847]">{stats.bestPipes}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                    <img src="/sprites/coin.png" alt="" className="w-8 h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
+                                    <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
                                     Meilleures pièces
                                 </span>
                                 <span className="font-bold text-yellow-700">{stats.bestCoins}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">Meilleur combo</span>
-                                <span className="font-bold text-orange-600">{stats.bestCombo}</span>
+                                <span className="text-[#543847]/70 text-sm">⭐ Meilleur total</span>
+                                <span className="font-bold text-[#543847] text-lg">{stats.bestTotal}</span>
                             </div>
-
-                            <div className="border-t border-[#543847]/20 pt-2">
-                                <p className="text-xs font-semibold text-[#543847]/50 mb-1">TOTAUX</p>
+                            <div className="flex justify-between items-center">
+                                <span className="text-[#543847]/70 text-sm">🔥 Meilleur combo</span>
+                                <span className="font-bold text-orange-600">{stats.bestCombo}</span>
                             </div>
 
                             {/* Lifetime totals */}
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                    <img src="/sprites/coin.png" alt="" className="w-8 h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
+                                    <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
                                     Pièces collectées
                                 </span>
                                 <span className="font-bold text-yellow-700">{stats.totalCoinScore}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                    <img src="/sprites/diamond.png" alt="" className="w-8 h-8 diamond-pulse" style={{ imageRendering: 'pixelated' }} />
+                                    <img src="/sprites/diamond.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 diamond-pulse" style={{ imageRendering: 'pixelated' }} />
                                     Diamants
                                 </span>
                                 <span className="font-bold text-cyan-600">{stats.totalDiamonds}</span>
                             </div>
 
                             {/* Achievement */}
-                            <div className="border-t border-[#543847]/20 pt-2">
-                                <p className="text-xs font-semibold text-[#543847]/50 mb-1">SUCCÈS</p>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">Score de 20 pts</span>
-                                <span className={`font-bold text-sm ${stats.achievement20 ? 'text-green-600' : 'text-[#543847]/30'}`}>
-                                    {stats.achievement20 ? '✅' : '🔒'}
-                                </span>
-                            </div>
+                            {stats.achievement20 && (
+                                <div className="mt-2 p-2 bg-[#FFD700]/20 rounded-lg text-center border border-[#FFD700]/40">
+                                    <p className="text-xs font-bold text-[#543847]">🏅 Score de 20 pts</p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex flex-col gap-2">
@@ -187,15 +326,18 @@ export default function GameOverlay({
         );
     }
 
+    // ========================================
+    // START / GAME OVER screens
+    // ========================================
     return (
         <>
             {animStyles}
             <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
-                <div className="bg-[#DED895] rounded-xl p-6 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
+                <div className="bg-[#DED895] rounded-xl p-4 sm:p-6 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
                     {gameState === 'START' ? (
                         <>
                             <h1
-                                className="text-4xl font-bold mb-2 text-[#543847]"
+                                className="text-3xl sm:text-4xl font-bold mb-2 text-[#543847]"
                                 style={{ fontFamily: 'system-ui, sans-serif' }}
                             >
                                 MOSKI FLY
@@ -205,7 +347,7 @@ export default function GameOverlay({
                             </p>
 
                             <div className="mb-4">
-                                <div className="w-20 h-20 mx-auto animate-bounce">
+                                <div className="w-16 h-16 sm:w-20 sm:h-20 mx-auto animate-bounce">
                                     <img
                                         src="/sprites/v2.png"
                                         alt="Moski"
@@ -222,39 +364,44 @@ export default function GameOverlay({
                                 START
                             </button>
 
-                            {highScore > 0 && (
-                                <p className="mt-3 text-sm text-[#543847]/70">
-                                    Best: <span className="font-bold text-[#543847]">{highScore}</span>
-                                </p>
-                            )}
+                            <p className="text-[#543847]/60 text-sm mt-3">
+                                Best: <span className="font-bold text-[#543847]">{highScore}</span>
+                            </p>
 
-                            {stats && stats.totalGames > 0 && (
+                            {/* Bottom row: Stats + Leaderboard */}
+                            <div className="flex gap-2 mt-3 justify-center">
                                 <button
                                     onClick={onToggleStats}
-                                    className="mt-2 px-4 py-1.5 bg-[#543847]/20 hover:bg-[#543847]/30 text-[#543847] text-sm font-bold rounded-lg transition-all"
+                                    className="px-4 py-1.5 bg-[#543847]/20 hover:bg-[#543847]/30 text-[#543847] text-sm font-bold rounded-lg transition-all"
                                 >
                                     Stats
                                 </button>
-                            )}
+                                <button
+                                    onClick={onToggleLeaderboard}
+                                    className="px-4 py-1.5 bg-[#FFD700]/40 hover:bg-[#FFD700]/60 text-[#543847] text-sm font-bold rounded-lg transition-all"
+                                >
+                                    🏆 Top 30
+                                </button>
+                            </div>
                         </>
                     ) : (
                         <>
-                            <h2 className="text-3xl font-bold mb-3 text-[#543847]">
+                            <h2 className="text-2xl sm:text-3xl font-bold mb-3 text-[#543847]">
                                 GAME OVER
                             </h2>
 
-                            <div className="bg-[#C4A86B] rounded-lg p-4 mb-4">
+                            <div className="bg-[#C4A86B] rounded-lg p-3 sm:p-4 mb-4">
                                 {/* Pipe Score */}
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                        PARCOURS
+                                        🚀 PARCOURS
                                     </span>
                                     <span className="text-xl font-bold text-[#543847]">{animPipe}</span>
                                 </div>
                                 {/* Coin Score */}
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                        <img src="/sprites/coin.png" alt="" className="w-8 h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
+                                        <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
                                         PIÈCES
                                     </span>
                                     <span className="text-xl font-bold text-yellow-600">{animCoin}</span>
@@ -299,12 +446,20 @@ export default function GameOverlay({
                                     PLAY AGAIN
                                 </button>
 
-                                <button
-                                    onClick={onToggleStats}
-                                    className="px-4 py-1.5 bg-[#543847]/20 hover:bg-[#543847]/30 text-[#543847] text-sm font-bold rounded-lg transition-all"
-                                >
-                                    Stats
-                                </button>
+                                <div className="flex gap-2 justify-center">
+                                    <button
+                                        onClick={onToggleStats}
+                                        className="px-4 py-1.5 bg-[#543847]/20 hover:bg-[#543847]/30 text-[#543847] text-sm font-bold rounded-lg transition-all"
+                                    >
+                                        Stats
+                                    </button>
+                                    <button
+                                        onClick={onToggleLeaderboard}
+                                        className="px-4 py-1.5 bg-[#FFD700]/40 hover:bg-[#FFD700]/60 text-[#543847] text-sm font-bold rounded-lg transition-all"
+                                    >
+                                        🏆 Top 30
+                                    </button>
+                                </div>
                             </div>
                         </>
                     )}

@@ -22,6 +22,7 @@ import {
 } from './Physics';
 import { resumeAudio, playCoinSound, playDiamondSound, playPipeSound, playFlapSound, playGameOverSound, bgMusic } from './SoundManager';
 import { loadStats, saveGameResult, resetStats, GameStats } from './StatsManager';
+import { getPseudo, savePseudo, submitScore, initAuth } from './LeaderboardManager';
 import DevPanel from './DevPanel';
 import GameOverlay from './GameOverlay';
 
@@ -50,6 +51,8 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     const [showStats, setShowStats] = useState(false);
     const [stats, setStats] = useState<GameStats | null>(null);
     const [showUpdateNote, setShowUpdateNote] = useState(false);
+    const [pseudo, setPseudo] = useState<string | null>(null);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
 
     // Per-game tracking refs
     const diamondsCollectedRef = useRef(0);
@@ -121,11 +124,18 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         return () => window.removeEventListener('resize', updateSize);
     }, []);
 
-    // Load stats from localStorage on mount
+    // Load stats and pseudo from localStorage on mount
     useEffect(() => {
         const saved = loadStats();
         setStats(saved);
         setHighScore(saved.bestTotal);
+
+        // Load pseudo
+        const savedPseudo = getPseudo();
+        if (savedPseudo) setPseudo(savedPseudo);
+
+        // Init Firebase Anonymous Auth
+        initAuth();
 
         // Show update note once per version
         const UPDATE_VERSION = 'v1.1';
@@ -168,6 +178,13 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         setHighScore(updatedStats.bestTotal);
         bgMusic.stop();
         if (soundEnabled) playGameOverSound();
+
+        // Submit to leaderboard
+        const currentPseudo = getPseudo();
+        const totalScore = pipeScore + coinScore;
+        if (currentPseudo && totalScore > 0) {
+            submitScore(currentPseudo, totalScore);
+        }
     }, [pipeScore, coinScore, soundEnabled]);
 
     // Handle input
@@ -215,9 +232,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Update pipes
         pipesRef.current = updatePipes(pipesRef.current, config, width, height, deltaTime);
 
-        // Spawn coin in gap when new pipe is added (90% chance)
+        // Spawn coin in gap when new pipe is added (65% chance)
         const currentLastPipe = pipesRef.current[pipesRef.current.length - 1];
-        if (currentLastPipe && currentLastPipe.x >= width - config.pipeSpeed && Math.random() < 0.9) {
+        if (currentLastPipe && currentLastPipe.x >= width - config.pipeSpeed && Math.random() < 0.65) {
             // Check if this pipe already has a coin nearby
             const hasCoinNearby = coinsRef.current.some(c => Math.abs(c.x - currentLastPipe.x) < 50);
             if (!hasCoinNearby) {
@@ -304,16 +321,29 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
 
-        // Draw background image
+        // Draw background image (cover mode - no stretching)
         const bg = backgroundRef.current;
         if (bg && bg.complete) {
-            // Draw the background scaled to fit the canvas, but shifted up slightly to hide its static ground
-            // We want the sky/hills part to be visible
             ctx.imageSmoothingEnabled = false;
 
-            // Draw background to cover the whole screen, potentially cropping bottom
-            // or just draw it behind everything
-            ctx.drawImage(bg, 0, 0, width, height);
+            // Cover mode: scale to fill canvas while preserving aspect ratio
+            const bgRatio = bg.naturalWidth / bg.naturalHeight;
+            const canvasRatio = width / height;
+            let sx = 0, sy = 0, sw = bg.naturalWidth, sh = bg.naturalHeight;
+
+            if (canvasRatio > bgRatio) {
+                // Canvas is wider than image — crop top/bottom
+                const visibleHeight = bg.naturalWidth / canvasRatio;
+                sy = (bg.naturalHeight - visibleHeight) / 2;
+                sh = visibleHeight;
+            } else {
+                // Canvas is taller than image — crop left/right
+                const visibleWidth = bg.naturalHeight * canvasRatio;
+                sx = (bg.naturalWidth - visibleWidth) / 2;
+                sw = visibleWidth;
+            }
+
+            ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, width, height);
         } else {
             // Fallback solid color while loading
             ctx.fillStyle = '#87CEEB';
@@ -641,7 +671,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
             {/* Desktop container wrapper */}
             <div
                 ref={containerRef}
-                className="relative w-full h-full max-w-[480px] bg-[#4EC0CA]"
+                className="relative w-full h-full max-w-[480px] md:max-w-none bg-[#4EC0CA]"
             >
                 <div className="absolute inset-0 w-full h-full">
                     <canvas
@@ -675,12 +705,19 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                             setHighScore(0);
                             setShowStats(false);
                         }}
+                        pseudo={pseudo}
+                        onSetPseudo={(p) => {
+                            savePseudo(p);
+                            setPseudo(p);
+                        }}
+                        showLeaderboard={showLeaderboard}
+                        onToggleLeaderboard={() => setShowLeaderboard(s => !s)}
                     />
 
                     {/* Update note modal */}
                     {showUpdateNote && gameState === 'START' && (
                         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/50 backdrop-blur-sm">
-                            <div className="bg-[#DED895] rounded-xl p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full"
+                            <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full"
                                 style={{ animation: 'pop-in 0.4s ease-out forwards' }}>
                                 <h2 className="text-xl font-bold mb-2 text-[#543847]">Quoi de neuf ? 🎉</h2>
                                 <p className="text-xs text-[#543847]/60 mb-3">v1.1</p>
@@ -711,13 +748,13 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
                     {/* Score HUD during gameplay */}
                     {gameState === 'PLAYING' && (
-                        <div className="absolute top-8 left-0 right-0 z-10 pointer-events-none select-none px-4">
+                        <div className="absolute left-0 right-0 z-10 pointer-events-none select-none px-3 sm:px-4" style={{ top: 'max(1.5rem, env(safe-area-inset-top, 2rem))' }}>
                             <div className="flex justify-between items-start max-w-[480px] mx-auto">
                                 {/* Pipe Score (left) */}
-                                <div className="flex items-center gap-2">
-                                    <span className="text-2xl">🚀</span>
+                                <div className="flex items-center gap-1 sm:gap-2">
+                                    <span className="text-lg sm:text-2xl">🚀</span>
                                     <span
-                                        className="text-4xl font-bold text-white font-mono"
+                                        className="text-2xl sm:text-4xl font-bold text-white font-mono"
                                         style={{
                                             textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
                                         }}
@@ -727,14 +764,14 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                                 </div>
                                 {/* Coin Score (right) */}
                                 <div
-                                    className="flex items-center gap-2 transition-transform duration-200"
+                                    className="flex items-center gap-1 sm:gap-2 transition-transform duration-200"
                                     style={{
                                         transform: coinFlash ? 'scale(1.4)' : 'scale(1)',
                                     }}
                                 >
-                                    <img src="/sprites/coin.png" alt="coin" style={{ width: 55, height: 55, imageRendering: 'pixelated' }} />
+                                    <img src="/sprites/coin.png" alt="coin" className="w-8 sm:w-[55px] h-8 sm:h-[55px]" style={{ imageRendering: 'pixelated' }} />
                                     <span
-                                        className={`text-4xl font-bold font-mono transition-colors duration-200 ${coinFlash ? 'text-white' : 'text-yellow-300'}`}
+                                        className={`text-2xl sm:text-4xl font-bold font-mono transition-colors duration-200 ${coinFlash ? 'text-white' : 'text-yellow-300'}`}
                                         style={{
                                             textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000',
                                         }}
@@ -747,7 +784,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                             {showCombo && coinCombo >= 3 && (
                                 <div className="flex justify-center mt-2 animate-bounce">
                                     <span
-                                        className="text-xl font-bold text-orange-400 font-mono"
+                                        className="text-base sm:text-xl font-bold text-orange-400 font-mono"
                                         style={{
                                             textShadow: '2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000',
                                         }}
