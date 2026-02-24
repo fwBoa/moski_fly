@@ -301,7 +301,15 @@ export default function GameOverlay({
                             {/* Achievement */}
                             {stats.achievement20 && (
                                 <div className="mt-2 p-2 bg-[#FFD700]/20 rounded-lg text-center border border-[#FFD700]/40">
-                                    <p className="text-xs font-bold text-[#543847]">🏅 Score de 20 pts</p>
+                                    <p className="text-xs font-bold text-[#543847] mb-2">🏅 Score de 20 pts</p>
+                                    <a
+                                        href="https://partiful.com/e/IKS6tattg5ONtlDHicWh?c=DKdOEiWC"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-block px-4 py-1.5 bg-[#543847] text-white text-xs font-bold rounded-lg hover:bg-[#6b4d5c] transition-all"
+                                    >
+                                        🎉 Accéder à Moskifest
+                                    </a>
                                 </div>
                             )}
                         </div>
@@ -433,7 +441,15 @@ export default function GameOverlay({
                                         <p className="text-xs font-bold text-[#543847]">
                                             🏅 SUCCÈS DÉBLOQUÉ !
                                         </p>
-                                        <p className="text-xs text-[#543847]/70">Score de 20 points</p>
+                                        <p className="text-xs text-[#543847]/70 mb-2">Score de 20 points</p>
+                                        <a
+                                            href="https://partiful.com/e/IKS6tattg5ONtlDHicWh?c=DKdOEiWC"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-block px-4 py-1.5 bg-[#543847] text-white text-xs font-bold rounded-lg hover:bg-[#6b4d5c] transition-all"
+                                        >
+                                            🎉 Accéder à Moskifest
+                                        </a>
                                     </div>
                                 )}
                             </div>
