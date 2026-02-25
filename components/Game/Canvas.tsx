@@ -205,6 +205,10 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     // Keyboard input
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore keyboard when typing in an input or modal is open
+            if (!pseudo || showStats || showLeaderboard) return;
+            if (e.target instanceof HTMLInputElement) return;
+
             if (e.code === 'Space' || e.code === 'ArrowUp') {
                 e.preventDefault();
                 handleFlap();
@@ -213,7 +217,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [handleFlap]);
+    }, [handleFlap, pseudo, showStats, showLeaderboard]);
 
     // Game loop update
     const updateGame = useCallback((deltaTime: number) => {
