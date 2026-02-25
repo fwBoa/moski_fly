@@ -55,7 +55,7 @@ export function saveGameResult(
     stats.bestPipes = Math.max(stats.bestPipes, pipeScore);
     stats.bestCoins = Math.max(stats.bestCoins, coinScore);
     stats.bestCombo = Math.max(stats.bestCombo, maxCombo);
-    if (totalScore >= 20) stats.achievement20 = true;
+    if (totalScore >= 10) stats.achievement20 = true;
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));

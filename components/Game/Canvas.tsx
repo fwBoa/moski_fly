@@ -719,17 +719,17 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                         <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/50 backdrop-blur-sm">
                             <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full"
                                 style={{ animation: 'pop-in 0.4s ease-out forwards' }}>
-                                <h2 className="text-xl font-bold mb-2 text-[#543847]">Quoi de neuf ? 🎉</h2>
+                                <h2 className="text-xl font-bold mb-2 text-[#543847]">What&apos;s new? 🎉</h2>
                                 <p className="text-xs text-[#543847]/60 mb-3">v1.1</p>
 
                                 <div className="bg-[#C4A86B] rounded-lg p-3 mb-4 text-left space-y-2 text-sm text-[#543847]">
-                                    <p className="font-semibold">Nouveautés :</p>
+                                    <p className="font-semibold">New features:</p>
                                     <ul className="list-disc list-inside space-y-1 text-[#543847]/80 text-xs">
-                                        <li>Pièces & diamants à collecter</li>
-                                        <li>Système de combo (x2 à 3+)</li>
-                                        <li>Statistiques sauvegardées</li>
-                                        <li>Succès à débloquer (20 pts)</li>
-                                        <li>Animations et effets visuels</li>
+                                        <li>Coins & diamonds to collect</li>
+                                        <li>Combo system (x2 at 3+)</li>
+                                        <li>Saved statistics</li>
+                                        <li>Achievement to unlock (20 pts)</li>
+                                        <li>Animations and visual effects</li>
                                     </ul>
                                 </div>
 
@@ -740,7 +740,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                                     }}
                                     className="px-8 py-3 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1 w-full"
                                 >
-                                    C&apos;EST PARTI !
+                                    LET&apos;S GO!
                                 </button>
                             </div>
                         </div>

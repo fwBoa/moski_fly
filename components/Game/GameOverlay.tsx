@@ -70,7 +70,7 @@ export default function GameOverlay({
     const animTotal = useCountUp(totalScore, 900, isGameOver);
 
     // Check if achievement just unlocked this game
-    const justUnlocked20 = isGameOver && totalScore >= 20 && stats && stats.achievement20;
+    const justUnlocked20 = isGameOver && totalScore >= 10 && stats && stats.achievement20;
 
     // Pseudo input state
     const [pseudoInput, setPseudoInput] = useState('');
@@ -133,7 +133,7 @@ export default function GameOverlay({
         setCheckingPseudo(false);
 
         if (!available) {
-            setPseudoError('Ce pseudo est déjà pris !');
+            setPseudoError('This name is already taken!');
             return;
         }
 
@@ -146,8 +146,8 @@ export default function GameOverlay({
                 {animStyles}
                 <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
                     <div className="bg-[#DED895] rounded-xl p-4 sm:p-6 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
-                        <h2 className="text-xl sm:text-2xl font-bold mb-2 text-[#543847]">Choisis ton pseudo ✏️</h2>
-                        <p className="text-[#543847]/70 text-xs mb-4">Visible sur le leaderboard</p>
+                        <h2 className="text-xl sm:text-2xl font-bold mb-2 text-[#543847]">Choose your name ✏️</h2>
+                        <p className="text-[#543847]/70 text-xs mb-4">Shown on the leaderboard</p>
 
                         <input
                             type="text"
@@ -156,7 +156,7 @@ export default function GameOverlay({
                                 setPseudoInput(e.target.value.slice(0, 15));
                                 setPseudoError('');
                             }}
-                            placeholder="Ton pseudo..."
+                            placeholder="Your name..."
                             maxLength={15}
                             className={`w-full px-4 py-3 rounded-lg bg-white/80 border-2 ${pseudoError ? 'border-red-500' : 'border-[#543847]/30'} text-[#543847] font-bold text-center text-lg outline-none focus:border-[#5DBE4A] transition-colors mb-1`}
                             autoFocus
@@ -175,7 +175,7 @@ export default function GameOverlay({
                             disabled={pseudoInput.trim().length < 1 || checkingPseudo}
                             className="px-8 py-3 bg-[#5DBE4A] hover:bg-[#4CAF3A] disabled:bg-gray-400 text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] disabled:border-gray-500 active:border-b-0 active:mt-1 w-full"
                         >
-                            {checkingPseudo ? 'Vérification...' : "C'EST PARTI !"}
+                            {checkingPseudo ? 'Checking...' : "LET'S GO!"}
                         </button>
                     </div>
                 </div>
@@ -197,15 +197,15 @@ export default function GameOverlay({
 
                         <div className="bg-[#C4A86B] rounded-lg p-2 mb-3 max-h-[55vh] overflow-y-auto">
                             {loadingLb ? (
-                                <p className="text-[#543847]/70 text-sm py-4">Chargement...</p>
+                                <p className="text-[#543847]/70 text-sm py-4">Loading...</p>
                             ) : leaderboard.length === 0 ? (
-                                <p className="text-[#543847]/70 text-sm py-4">Aucun score pour le moment !</p>
+                                <p className="text-[#543847]/70 text-sm py-4">No scores yet!</p>
                             ) : (
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="text-[#543847]/60 text-xs">
                                             <th className="text-left py-1 pl-2">#</th>
-                                            <th className="text-left py-1">Joueur</th>
+                                            <th className="text-left py-1">Player</th>
                                             <th className="text-right py-1 pr-2">Score</th>
                                         </tr>
                                     </thead>
@@ -236,7 +236,7 @@ export default function GameOverlay({
                             onClick={onToggleLeaderboard}
                             className="px-6 py-2 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1 w-full"
                         >
-                            RETOUR
+                            BACK
                         </button>
                     </div>
                 </div>
@@ -253,32 +253,32 @@ export default function GameOverlay({
                 {animStyles}
                 <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 backdrop-blur-sm">
                     <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full pop-in">
-                        <h2 className="text-xl sm:text-2xl font-bold mb-3 text-[#543847]">STATISTIQUES</h2>
+                        <h2 className="text-xl sm:text-2xl font-bold mb-3 text-[#543847]">STATISTICS</h2>
 
                         <div className="bg-[#C4A86B] rounded-lg p-2 sm:p-3 mb-3 text-left space-y-2">
                             {/* Games played */}
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">Parties</span>
+                                <span className="text-[#543847]/70 text-sm">Games</span>
                                 <span className="font-bold text-[#543847]">{stats.totalGames}</span>
                             </div>
                             {/* Bests */}
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">🚀 Meilleur parcours</span>
+                                <span className="text-[#543847]/70 text-sm">🚀 Best run</span>
                                 <span className="font-bold text-[#543847]">{stats.bestPipes}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
                                     <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
-                                    Meilleures pièces
+                                    Best coins
                                 </span>
                                 <span className="font-bold text-yellow-700">{stats.bestCoins}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">⭐ Meilleur total</span>
+                                <span className="text-[#543847]/70 text-sm">⭐ Best total</span>
                                 <span className="font-bold text-[#543847] text-lg">{stats.bestTotal}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                                <span className="text-[#543847]/70 text-sm">🔥 Meilleur combo</span>
+                                <span className="text-[#543847]/70 text-sm">🔥 Best combo</span>
                                 <span className="font-bold text-orange-600">{stats.bestCombo}</span>
                             </div>
 
@@ -286,14 +286,14 @@ export default function GameOverlay({
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
                                     <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
-                                    Pièces collectées
+                                    Coins collected
                                 </span>
                                 <span className="font-bold text-yellow-700">{stats.totalCoinScore}</span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-[#543847]/70 text-sm flex items-center gap-1">
                                     <img src="/sprites/diamond.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 diamond-pulse" style={{ imageRendering: 'pixelated' }} />
-                                    Diamants
+                                    Diamonds
                                 </span>
                                 <span className="font-bold text-cyan-600">{stats.totalDiamonds}</span>
                             </div>
@@ -301,14 +301,14 @@ export default function GameOverlay({
                             {/* Achievement */}
                             {stats.achievement20 && (
                                 <div className="mt-2 p-2 bg-[#FFD700]/20 rounded-lg text-center border border-[#FFD700]/40">
-                                    <p className="text-xs font-bold text-[#543847] mb-2">🏅 Score de 20 pts</p>
+                                    <p className="text-xs font-bold text-[#543847] mb-2">🏅 10 pts reached</p>
                                     <a
                                         href="https://partiful.com/e/IKS6tattg5ONtlDHicWh?c=DKdOEiWC"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-block px-4 py-1.5 bg-[#543847] text-white text-xs font-bold rounded-lg hover:bg-[#6b4d5c] transition-all"
                                     >
-                                        🎉 Accéder à Moskifest
+                                        🎉 WELCOME TO MOSKIFEST
                                     </a>
                                 </div>
                             )}
@@ -325,7 +325,7 @@ export default function GameOverlay({
                                 onClick={onResetStats}
                                 className="px-4 py-1.5 bg-red-500/80 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all"
                             >
-                                Réinitialiser les stats
+                                Reset stats
                             </button>
                         </div>
                     </div>
@@ -402,7 +402,7 @@ export default function GameOverlay({
                                 {/* Pipe Score */}
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-[#543847]/70 text-sm flex items-center gap-1">
-                                        🚀 PARCOURS
+                                        🚀 RUN
                                     </span>
                                     <span className="text-xl font-bold text-[#543847]">{animPipe}</span>
                                 </div>
@@ -410,7 +410,7 @@ export default function GameOverlay({
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-[#543847]/70 text-sm flex items-center gap-1">
                                         <img src="/sprites/coin.png" alt="" className="w-6 h-6 sm:w-8 sm:h-8 coin-spin" style={{ imageRendering: 'pixelated' }} />
-                                        PIÈCES
+                                        COINS
                                     </span>
                                     <span className="text-xl font-bold text-yellow-600">{animCoin}</span>
                                 </div>
@@ -439,9 +439,9 @@ export default function GameOverlay({
                                 {justUnlocked20 && (
                                     <div className="mt-3 p-2 bg-[#FFD700]/30 rounded-lg border-2 border-[#FFD700] achievement-glow text-center">
                                         <p className="text-xs font-bold text-[#543847]">
-                                            🏅 SUCCÈS DÉBLOQUÉ !
+                                            🏅 ACHIEVEMENT UNLOCKED!
                                         </p>
-                                        <p className="text-xs text-[#543847]/70 mb-2">Score de 20 points</p>
+                                        <p className="text-xs text-[#543847]/70 mb-2">10 points reached</p>
                                         <a
                                             href="https://partiful.com/e/IKS6tattg5ONtlDHicWh?c=DKdOEiWC"
                                             target="_blank"
