@@ -732,7 +732,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                                         <li>Coins & diamonds to collect</li>
                                         <li>Combo system (x2 at 3+)</li>
                                         <li>Saved statistics</li>
-                                        <li>Achievement to unlock (20 pts)</li>
+                                        <li>Achievement to unlock (10 pts)</li>
                                         <li>Animations and visual effects</li>
                                     </ul>
                                 </div>
