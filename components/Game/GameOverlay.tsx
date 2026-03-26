@@ -448,7 +448,7 @@ export default function GameOverlay({
                                             rel="noopener noreferrer"
                                             className="inline-block px-4 py-1.5 bg-[#543847] text-white text-xs font-bold rounded-lg hover:bg-[#6b4d5c] transition-all"
                                         >
-                                            🎉 Accéder à Moskifest
+                                            🎉 WELCOME TO MOSKIFEST
                                         </a>
                                     </div>
                                 )}
