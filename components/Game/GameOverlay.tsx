@@ -319,7 +319,7 @@ export default function GameOverlay({
                                 onClick={onToggleStats}
                                 className="px-6 py-2 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1"
                             >
-                                RETOUR
+                                BACK
                             </button>
                             <button
                                 onClick={onResetStats}
