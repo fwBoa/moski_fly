@@ -15,7 +15,6 @@ import {
     updatePipes,
     checkCollision,
     checkScore,
-    getAnimationFrame,
     createCoinInGap,
     updateCoins,
     checkCoinCollection,
@@ -23,6 +22,8 @@ import {
 import { resumeAudio, playCoinSound, playDiamondSound, playPipeSound, playFlapSound, playGameOverSound, bgMusic } from './SoundManager';
 import { loadStats, saveGameResult, resetStats, GameStats } from './StatsManager';
 import { getPseudo, savePseudo, submitScore, initAuth } from './LeaderboardManager';
+import { FlyingCoin, drawBackground, drawPipes, drawGround, drawCoins, drawPlayer } from './Renderer';
+import { getDynamicConfig } from './difficulty';
 import DevPanel from './DevPanel';
 import GameOverlay from './GameOverlay';
 
@@ -57,16 +58,11 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     // Per-game tracking refs
     const diamondsCollectedRef = useRef(0);
     const maxComboRef = useRef(0);
+    const coinComboRef = useRef(0);
+    const pipeScoreRef = useRef(0);
+    const coinScoreRef = useRef(0);
 
     // Flying coins animation
-    interface FlyingCoin {
-        x: number;
-        y: number;
-        startX: number;
-        startY: number;
-        progress: number;
-        type: CoinType;
-    }
     const flyingCoinsRef = useRef<FlyingCoin[]>([]);
 
     // Game objects (using refs for real-time updates in animation loop)
@@ -95,13 +91,22 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         diamondSpriteRef.current = diamondImg;
     }, []);
 
-    // Background image ref
-    const backgroundRef = useRef<HTMLImageElement | null>(null);
+    // Background images (one per score tier)
+    const backgroundsRef = useRef<HTMLImageElement[]>([]);
 
     useEffect(() => {
-        const bg = new Image();
-        bg.src = '/sprites/background.png';
-        backgroundRef.current = bg;
+        const bgPaths = [
+            '/sprites/background.png',         // 0-99: day
+            '/sprites/background_sunset.png',   // 100-199: sunset
+            '/sprites/background_night.png',    // 200-299: night
+            '/sprites/background_cosmic.png',   // 300-399: cosmic
+            '/sprites/background_aurora.png',   // 400+: aurora
+        ];
+        backgroundsRef.current = bgPaths.map(src => {
+            const img = new Image();
+            img.src = src;
+            return img;
+        });
     }, []);
 
     // Handle responsive canvas sizing
@@ -138,7 +143,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         initAuth();
 
         // Show update note once per version
-        const UPDATE_VERSION = 'v1.1';
+        const UPDATE_VERSION = 'v1.2';
         const seenVersion = localStorage.getItem('moski_update_seen');
         if (seenVersion !== UPDATE_VERSION) {
             setShowUpdateNote(true);
@@ -154,6 +159,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         groundOffsetRef.current = 0;
         diamondsCollectedRef.current = 0;
         maxComboRef.current = 0;
+        coinComboRef.current = 0;
+        pipeScoreRef.current = 0;
+        coinScoreRef.current = 0;
         setPipeScore(0);
         setCoinScore(0);
         setCoinCombo(0);
@@ -173,29 +181,31 @@ export default function Canvas({ devMode = false }: CanvasProps) {
     // Game over
     const gameOver = useCallback(() => {
         setGameState('GAME_OVER');
-        const updatedStats = saveGameResult(pipeScore, coinScore, diamondsCollectedRef.current, maxComboRef.current);
+        const finalPipeScore = pipeScoreRef.current;
+        const finalCoinScore = coinScoreRef.current;
+        const updatedStats = saveGameResult(finalPipeScore, finalCoinScore, diamondsCollectedRef.current, maxComboRef.current);
         setStats(updatedStats);
         setHighScore(updatedStats.bestTotal);
+        setPipeScore(finalPipeScore);
+        setCoinScore(finalCoinScore);
         bgMusic.stop();
         if (soundEnabled) playGameOverSound();
 
         // Submit to leaderboard
         const currentPseudo = getPseudo();
-        const totalScore = pipeScore + coinScore;
+        const totalScore = finalPipeScore + finalCoinScore;
         if (currentPseudo && totalScore > 0) {
             submitScore(currentPseudo, totalScore);
         }
-    }, [pipeScore, coinScore, soundEnabled]);
+    }, [soundEnabled]);
 
     // Handle input
     const handleFlap = useCallback(() => {
         if (gameState === 'START') {
             startGame();
-            if (playerRef.current) {
-                playerRef.current = applyFlap(playerRef.current, config);
-            }
         } else if (gameState === 'PLAYING' && playerRef.current) {
-            playerRef.current = applyFlap(playerRef.current, config);
+            const currentConfig = getDynamicConfig(config, pipeScoreRef.current);
+            playerRef.current = applyFlap(playerRef.current, currentConfig);
             if (soundEnabled) playFlapSound();
         } else if (gameState === 'GAME_OVER') {
             startGame();
@@ -227,18 +237,21 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
         const { width, height } = canvas;
 
+        // Calculate dynamic difficulty based on current score
+        const currentConfig = getDynamicConfig(config, pipeScoreRef.current);
+
         // Update ground scroll
-        groundOffsetRef.current = (groundOffsetRef.current + config.pipeSpeed * (deltaTime / 16.67)) % 48;
+        groundOffsetRef.current = (groundOffsetRef.current + currentConfig.pipeSpeed * (deltaTime / 16.67)) % 48;
 
         // Update player physics
-        playerRef.current = applyGravity(playerRef.current, config, deltaTime);
+        playerRef.current = applyGravity(playerRef.current, currentConfig, deltaTime);
 
         // Update pipes
-        pipesRef.current = updatePipes(pipesRef.current, config, width, height, deltaTime);
+        pipesRef.current = updatePipes(pipesRef.current, currentConfig, width, height, deltaTime);
 
         // Spawn coin in gap when new pipe is added (65% chance)
         const currentLastPipe = pipesRef.current[pipesRef.current.length - 1];
-        if (currentLastPipe && currentLastPipe.x >= width - config.pipeSpeed && Math.random() < 0.65) {
+        if (currentLastPipe && currentLastPipe.x >= width - currentConfig.pipeSpeed && Math.random() < 0.65) {
             // Check if this pipe already has a coin nearby
             const hasCoinNearby = coinsRef.current.some(c => Math.abs(c.x - currentLastPipe.x) < 50);
             if (!hasCoinNearby) {
@@ -255,7 +268,8 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         coinsRef.current = coinResult.coins;
         if (coinResult.collected > 0) {
             // Combo system
-            const newCombo = coinCombo + coinResult.collected;
+            const newCombo = coinComboRef.current + coinResult.collected;
+            coinComboRef.current = newCombo;
             setCoinCombo(newCombo);
             maxComboRef.current = Math.max(maxComboRef.current, newCombo);
 
@@ -263,7 +277,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
             const diamondsInBatch = coinResult.collectedCoins.filter(c => c.type === 'rare').length;
             diamondsCollectedRef.current += diamondsInBatch;
             const multiplier = newCombo >= 3 ? 2 : 1;
-            setCoinScore(prev => prev + coinResult.totalValue * multiplier);
+            const coinAdd = coinResult.totalValue * multiplier;
+            coinScoreRef.current += coinAdd;
+            setCoinScore(prev => prev + coinAdd);
 
             // Show combo indicator at 3+
             if (newCombo >= 3) {
@@ -301,7 +317,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
             .filter(fc => fc.progress < 1);
 
         // Check collision
-        if (checkCollision(playerRef.current, pipesRef.current, config, height)) {
+        if (checkCollision(playerRef.current, pipesRef.current, currentConfig, height)) {
             gameOver();
             return;
         }
@@ -310,329 +326,40 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         const scoreResult = checkScore(playerRef.current, pipesRef.current);
         pipesRef.current = scoreResult.pipes;
         if (scoreResult.scored) {
+            pipeScoreRef.current += 1;
             setPipeScore(prev => prev + 1);
             if (soundEnabled) playPipeSound();
         }
 
         // Render
-        render(ctx, width, height, deltaTime);
+        render(ctx, width, height, currentConfig, deltaTime);
     }, [config, gameOver]);
 
     // Render function - Classic Flappy Bird Style
-    const render = (ctx: CanvasRenderingContext2D, width: number, height: number, deltaTime?: number) => {
+    const render = (ctx: CanvasRenderingContext2D, width: number, height: number, currentConfig: GameConfig, deltaTime?: number) => {
         const groundHeight = 80;
 
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
 
-        // Draw background image (cover mode - no stretching)
-        const bg = backgroundRef.current;
-        if (bg && bg.complete) {
-            ctx.imageSmoothingEnabled = false;
-
-            // Cover mode: scale to fill canvas while preserving aspect ratio
-            const bgRatio = bg.naturalWidth / bg.naturalHeight;
-            const canvasRatio = width / height;
-            let sx = 0, sy = 0, sw = bg.naturalWidth, sh = bg.naturalHeight;
-
-            if (canvasRatio > bgRatio) {
-                // Canvas is wider than image — crop top/bottom
-                const visibleHeight = bg.naturalWidth / canvasRatio;
-                sy = (bg.naturalHeight - visibleHeight) / 2;
-                sh = visibleHeight;
-            } else {
-                // Canvas is taller than image — crop left/right
-                const visibleWidth = bg.naturalHeight * canvasRatio;
-                sx = (bg.naturalWidth - visibleWidth) / 2;
-                sw = visibleWidth;
-            }
-
-            ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, width, height);
-        } else {
-            // Fallback solid color while loading
-            ctx.fillStyle = '#87CEEB';
-            ctx.fillRect(0, 0, width, height);
-        }
+        // Select and draw background based on score tier
+        const currentTotal = pipeScoreRef.current + coinScoreRef.current;
+        const scoreTier = Math.floor(currentTotal / 100);
+        drawBackground(ctx, backgroundsRef.current, width, height, scoreTier);
 
         // Draw pipes
-        drawPipes(ctx, width, height, groundHeight);
+        drawPipes(ctx, pipesRef.current, currentConfig, width, height, groundHeight);
 
         // Draw coins
-        drawCoins(ctx);
+        drawCoins(ctx, coinsRef.current, flyingCoinsRef.current, coinSpriteRef.current, diamondSpriteRef.current, animTimeRef.current);
 
-        // Draw scrolling ground (restored!)
-        drawGround(ctx, width, height, groundHeight);
+        // Draw scrolling ground
+        drawGround(ctx, width, height, groundHeight, groundOffsetRef.current);
 
         // Draw player
         if (playerRef.current) {
-            drawPlayer(ctx, playerRef.current);
+            drawPlayer(ctx, playerRef.current, spritesRef.current);
         }
-    };
-
-    // Draw static clouds
-    const drawClouds = (ctx: CanvasRenderingContext2D, width: number) => {
-        // Static cloud positions
-        const clouds = [
-            { x: 40, y: 70, scale: 1.0 },
-            { x: 180, y: 45, scale: 0.8 },
-            { x: 300, y: 90, scale: 1.2 },
-            { x: 120, y: 130, scale: 0.6 },
-            { x: 260, y: 55, scale: 0.7 },
-        ];
-
-        for (const cloud of clouds) {
-            drawCloud(ctx, cloud.x, cloud.y, 28 * cloud.scale);
-        }
-    };
-
-    // Draw a single fluffy cloud
-    const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
-        ctx.fillStyle = '#ffffff';
-
-        // Fluffy cloud shape with multiple overlapping circles
-        ctx.beginPath();
-        ctx.arc(x, y, size * 0.5, 0, Math.PI * 2);
-        ctx.arc(x + size * 0.35, y - size * 0.2, size * 0.4, 0, Math.PI * 2);
-        ctx.arc(x + size * 0.7, y - size * 0.1, size * 0.45, 0, Math.PI * 2);
-        ctx.arc(x + size * 1.0, y, size * 0.4, 0, Math.PI * 2);
-        ctx.arc(x + size * 0.5, y + size * 0.1, size * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-    };
-
-    // Draw distant hills for depth
-    const drawDistantHills = (ctx: CanvasRenderingContext2D, width: number, groundY: number) => {
-        // Far hills - light green
-        ctx.fillStyle = '#90C695';
-        ctx.beginPath();
-        ctx.moveTo(0, groundY);
-        ctx.lineTo(0, groundY - 40);
-        ctx.quadraticCurveTo(60, groundY - 70, 120, groundY - 35);
-        ctx.quadraticCurveTo(180, groundY - 55, 240, groundY - 30);
-        ctx.quadraticCurveTo(300, groundY - 60, 360, groundY - 25);
-        ctx.quadraticCurveTo(400, groundY - 45, width, groundY - 30);
-        ctx.lineTo(width, groundY);
-        ctx.closePath();
-        ctx.fill();
-
-        // Near hills - darker green
-        ctx.fillStyle = '#6B8E6B';
-        ctx.beginPath();
-        ctx.moveTo(0, groundY);
-        ctx.lineTo(0, groundY - 25);
-        ctx.quadraticCurveTo(80, groundY - 45, 150, groundY - 20);
-        ctx.quadraticCurveTo(220, groundY - 38, 280, groundY - 15);
-        ctx.quadraticCurveTo(340, groundY - 35, width, groundY - 18);
-        ctx.lineTo(width, groundY);
-        ctx.closePath();
-        ctx.fill();
-    };
-
-    const drawPipes = (ctx: CanvasRenderingContext2D, width: number, height: number, groundHeight: number) => {
-        for (const pipe of pipesRef.current) {
-            const gapTop = pipe.gapY - config.pipeGap / 2;
-            const gapBottom = pipe.gapY + config.pipeGap / 2;
-            const pipeWidth = config.pipeWidth;
-            const capHeight = 26;
-            const capOverhang = 6;
-
-            // Pipe colors - classic green
-            const pipeBodyColor = '#73BF2E';
-            const pipeBodyDark = '#558B2F';
-            const pipeBodyLight = '#8BC34A';
-            const pipeCapColor = '#73BF2E';
-            const pipeCapDark = '#558B2F';
-
-            // TOP PIPE
-            // Main body
-            ctx.fillStyle = pipeBodyColor;
-            ctx.fillRect(pipe.x, 0, pipeWidth, gapTop - capHeight);
-
-            // Left shadow
-            ctx.fillStyle = pipeBodyDark;
-            ctx.fillRect(pipe.x, 0, 4, gapTop - capHeight);
-
-            // Right highlight
-            ctx.fillStyle = pipeBodyLight;
-            ctx.fillRect(pipe.x + pipeWidth - 8, 0, 4, gapTop - capHeight);
-
-            // Top pipe cap
-            ctx.fillStyle = pipeCapColor;
-            ctx.fillRect(pipe.x - capOverhang, gapTop - capHeight, pipeWidth + capOverhang * 2, capHeight);
-
-            // Cap shadow
-            ctx.fillStyle = pipeCapDark;
-            ctx.fillRect(pipe.x - capOverhang, gapTop - capHeight, 4, capHeight);
-
-            // Cap highlight
-            ctx.fillStyle = pipeBodyLight;
-            ctx.fillRect(pipe.x + pipeWidth + capOverhang - 8, gapTop - capHeight, 4, capHeight);
-
-            // Cap border
-            ctx.strokeStyle = '#2E7D32';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(pipe.x - capOverhang, gapTop - capHeight, pipeWidth + capOverhang * 2, capHeight);
-
-            // BOTTOM PIPE
-            // Main body
-            ctx.fillStyle = pipeBodyColor;
-            ctx.fillRect(pipe.x, gapBottom + capHeight, pipeWidth, height - gapBottom - groundHeight - capHeight);
-
-            // Left shadow
-            ctx.fillStyle = pipeBodyDark;
-            ctx.fillRect(pipe.x, gapBottom + capHeight, 4, height - gapBottom - groundHeight - capHeight);
-
-            // Right highlight
-            ctx.fillStyle = pipeBodyLight;
-            ctx.fillRect(pipe.x + pipeWidth - 8, gapBottom + capHeight, 4, height - gapBottom - groundHeight - capHeight);
-
-            // Bottom pipe cap
-            ctx.fillStyle = pipeCapColor;
-            ctx.fillRect(pipe.x - capOverhang, gapBottom, pipeWidth + capOverhang * 2, capHeight);
-
-            // Cap shadow
-            ctx.fillStyle = pipeCapDark;
-            ctx.fillRect(pipe.x - capOverhang, gapBottom, 4, capHeight);
-
-            // Cap highlight
-            ctx.fillStyle = pipeBodyLight;
-            ctx.fillRect(pipe.x + pipeWidth + capOverhang - 8, gapBottom, 4, capHeight);
-
-            // Cap border
-            ctx.strokeStyle = '#2E7D32';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(pipe.x - capOverhang, gapBottom, pipeWidth + capOverhang * 2, capHeight);
-        }
-    };
-
-    const drawGround = (ctx: CanvasRenderingContext2D, width: number, height: number, groundHeight: number) => {
-        const y = height - groundHeight;
-
-        // Ground base - dirt brown from background image
-        ctx.fillStyle = '#E5B083'; // Light brownish/tan
-        ctx.fillRect(0, y, width, groundHeight);
-
-        // Grass strip on top - matching the hills
-        ctx.fillStyle = '#6BAE5C'; // Green
-        ctx.fillRect(0, y, width, 18);
-
-        // Grass highlight - lighter green
-        ctx.fillStyle = '#88D56F';
-        ctx.fillRect(0, y, width, 6);
-
-        // Dirt detailed pattern - scrolling
-        ctx.fillStyle = '#C48E66'; // Darker brown for details
-        const offset = groundOffsetRef.current;
-        // Increase loop range to cover the max offset (48px = 2 tiles) plus buffer
-        for (let i = -1; i < Math.ceil(width / 24) + 3; i++) {
-            const x = i * 24 - offset;
-
-            // Zig-zag / checker pattern for dirt
-            ctx.fillRect(x, y + 25, 4, 4);
-            ctx.fillRect(x + 12, y + 25, 4, 4);
-
-            ctx.fillRect(x + 6, y + 35, 4, 4);
-            ctx.fillRect(x + 18, y + 35, 4, 4);
-
-            ctx.fillRect(x, y + 45, 4, 4);
-            ctx.fillRect(x + 12, y + 45, 4, 4);
-
-            ctx.fillRect(x + 6, y + 55, 4, 4);
-            ctx.fillRect(x + 18, y + 55, 4, 4);
-
-            // Bottom darker area
-            ctx.fillStyle = '#A37250';
-            ctx.fillRect(x, y + 65, 24, 15);
-            ctx.fillStyle = '#C48E66'; // Reset needed if I change fillStyle inside loop
-        }
-    };
-
-    // Draw coins with bobbing animation
-    const drawCoins = (ctx: CanvasRenderingContext2D) => {
-        const coinSprite = coinSpriteRef.current;
-        const diamondSprite = diamondSpriteRef.current;
-        if (!coinSprite || !coinSprite.complete) return;
-
-        const time = animTimeRef.current;
-        ctx.imageSmoothingEnabled = false;
-
-        for (const coin of coinsRef.current) {
-            if (coin.collected) continue;
-
-            const isRare = coin.type === 'rare';
-            const coinSize = isRare ? 90 : 80;
-            const sprite = (isRare && diamondSprite?.complete) ? diamondSprite : coinSprite;
-
-            // Bobbing animation
-            const bobOffset = Math.sin(time / 200 + coin.x * 0.01) * 6;
-
-            ctx.save();
-            ctx.translate(coin.x, coin.y + bobOffset);
-
-            // Pulse scale
-            const scale = 1 + Math.sin(time / 150 + coin.x * 0.02) * 0.1;
-            ctx.scale(scale, scale);
-
-            // Draw coin with correct sprite
-            ctx.drawImage(sprite, -coinSize / 2, -coinSize / 2, coinSize, coinSize);
-
-            ctx.restore();
-        }
-
-        // Draw flying coins (collection animation toward HUD)
-        for (const fc of flyingCoinsRef.current) {
-            const t = fc.progress;
-            // Ease-out curve
-            const ease = 1 - Math.pow(1 - t, 3);
-            // Target: top-right area (coin HUD position)
-            const targetX = ctx.canvas.width - 60;
-            const targetY = 40;
-            const x = fc.startX + (targetX - fc.startX) * ease;
-            const y = fc.startY + (targetY - fc.startY) * ease - Math.sin(t * Math.PI) * 50;
-            const fSize = 30 * (1 - t * 0.5);
-            const alpha = 1 - t;
-
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.translate(x, y);
-
-            if (fc.type === 'rare') {
-                ctx.shadowColor = '#00FFFF';
-                ctx.shadowBlur = 10;
-            } else {
-                ctx.shadowColor = '#FFD700';
-                ctx.shadowBlur = 8;
-            }
-
-            if (fc.type === 'rare' && diamondSprite?.complete) {
-                ctx.drawImage(diamondSprite, -fSize / 2, -fSize / 2, fSize, fSize);
-            } else if (coinSprite.complete) {
-                ctx.drawImage(coinSprite, -fSize / 2, -fSize / 2, fSize, fSize);
-            }
-            ctx.restore();
-        }
-    };
-
-    const drawPlayer = (ctx: CanvasRenderingContext2D, player: Player) => {
-        const sprite = spritesRef.current[getAnimationFrame(player.velocity)];
-        if (!sprite || !sprite.complete) return;
-
-        ctx.save();
-
-        // Move to player center, rotate, then draw centered
-        const centerX = player.x + player.width / 2;
-        const centerY = player.y + player.height / 2;
-
-        ctx.translate(centerX, centerY);
-        ctx.rotate((player.rotation * Math.PI) / 180);
-
-        // Pixelated rendering
-        ctx.imageSmoothingEnabled = false;
-
-        // Draw sprite centered
-        const drawSize = player.width;
-        ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
-
-        ctx.restore();
     };
 
     // Time ref for animations (avoids hydration issues with Date.now())
@@ -662,8 +389,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         playerRef.current.rotation = Math.sin(time / 800) * 5;
         playerRef.current.velocity = Math.sin(time / 300) * 5;
 
-        render(ctx, width, height);
-    }, []);
+        const currentConfig = getDynamicConfig(config, pipeScoreRef.current);
+        render(ctx, width, height, currentConfig, deltaTime);
+    }, [config]);
 
     useGameLoop({
         onUpdate: gameState === 'PLAYING' ? updateGame : idleUpdate,
@@ -724,23 +452,23 @@ export default function Canvas({ devMode = false }: CanvasProps) {
                             <div className="bg-[#DED895] rounded-xl p-4 sm:p-5 mx-4 text-center border-4 border-[#543847] shadow-lg max-w-xs w-full"
                                 style={{ animation: 'pop-in 0.4s ease-out forwards' }}>
                                 <h2 className="text-xl font-bold mb-2 text-[#543847]">What&apos;s new? 🎉</h2>
-                                <p className="text-xs text-[#543847]/60 mb-3">v1.1</p>
+                                <p className="text-xs text-[#543847]/60 mb-3">v1.2</p>
 
                                 <div className="bg-[#C4A86B] rounded-lg p-3 mb-4 text-left space-y-2 text-sm text-[#543847]">
                                     <p className="font-semibold">New features:</p>
                                     <ul className="list-disc list-inside space-y-1 text-[#543847]/80 text-xs">
-                                        <li>Coins & diamonds to collect</li>
-                                        <li>Combo system (x2 at 3+)</li>
-                                        <li>Saved statistics</li>
-                                        <li>Achievement to unlock (10 pts)</li>
-                                        <li>Animations and visual effects</li>
+                                        <li>🌅 New worlds every 100 pts!</li>
+                                        <li>🔥 Combos now work even better</li>
+                                        <li>🏆 Leaderboard scores always up to date</li>
+                                        <li>🏅 Fresh leaderboard — everyone restarts!</li>
+                                        <li>⚡ Dynamic difficulty: the further you go, the harder it gets!</li>
                                     </ul>
                                 </div>
 
                                 <button
                                     onClick={() => {
                                         setShowUpdateNote(false);
-                                        localStorage.setItem('moski_update_seen', 'v1.1');
+                                        localStorage.setItem('moski_update_seen', 'v1.2');
                                     }}
                                     className="px-8 py-3 bg-[#5DBE4A] hover:bg-[#4CAF3A] text-white font-bold rounded-lg transition-all border-b-4 border-[#3D8B32] active:border-b-0 active:mt-1 w-full"
                                 >

@@ -11,7 +11,7 @@ export interface GameStats {
     bestPipes: number;
     bestCoins: number;
     bestCombo: number;
-    achievement20: boolean;
+    achievement10: boolean;
 }
 
 const DEFAULT_STATS: GameStats = {
@@ -23,7 +23,7 @@ const DEFAULT_STATS: GameStats = {
     bestPipes: 0,
     bestCoins: 0,
     bestCombo: 0,
-    achievement20: false,
+    achievement10: false,
 };
 
 export function loadStats(): GameStats {
@@ -31,6 +31,11 @@ export function loadStats(): GameStats {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return { ...DEFAULT_STATS };
         const parsed = JSON.parse(raw);
+        // Migrate old achievement20 key → achievement10
+        if (parsed.achievement20 !== undefined && parsed.achievement10 === undefined) {
+            parsed.achievement10 = parsed.achievement20;
+            delete parsed.achievement20;
+        }
         // Merge with defaults to handle missing fields from older versions
         return { ...DEFAULT_STATS, ...parsed };
     } catch {
@@ -55,7 +60,7 @@ export function saveGameResult(
     stats.bestPipes = Math.max(stats.bestPipes, pipeScore);
     stats.bestCoins = Math.max(stats.bestCoins, coinScore);
     stats.bestCombo = Math.max(stats.bestCombo, maxCombo);
-    if (totalScore >= 10) stats.achievement20 = true;
+    if (totalScore >= 10) stats.achievement10 = true;
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));

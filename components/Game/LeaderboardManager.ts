@@ -19,9 +19,9 @@ export interface LeaderboardEntry {
     createdAt: Date | null;
 }
 
-const COLLECTION = 'leaderboard';
+const COLLECTION = 'leaderboard_v2';
 const PSEUDO_KEY = 'moski_pseudo';
-const BEST_SUBMITTED_KEY = 'moski_best_submitted';
+const BEST_SUBMITTED_KEY = 'moski_best_submitted_v2';
 
 // --- Auth ---
 
@@ -81,7 +81,7 @@ export async function submitScore(pseudo: string, score: number): Promise<boolea
 
         // Basic validation
         if (!pseudo || pseudo.length < 1 || pseudo.length > 15) return false;
-        if (score < 0 || score > 200) return false;
+        if (score < 0 || score > 500) return false;
 
         const pseudoKey = pseudo.trim().toLowerCase();
         await setDoc(doc(db, COLLECTION, pseudoKey), {

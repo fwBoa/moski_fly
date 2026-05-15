@@ -70,7 +70,7 @@ export default function GameOverlay({
     const animTotal = useCountUp(totalScore, 900, isGameOver);
 
     // Check if achievement just unlocked this game
-    const justUnlocked20 = isGameOver && totalScore >= 10 && stats && stats.achievement20;
+    const justUnlocked10 = isGameOver && totalScore >= 10 && stats && stats.achievement10;
 
     // Pseudo input state
     const [pseudoInput, setPseudoInput] = useState('');
@@ -299,7 +299,7 @@ export default function GameOverlay({
                             </div>
 
                             {/* Achievement */}
-                            {stats.achievement20 && (
+                            {stats.achievement10 && (
                                 <div className="mt-2 p-2 bg-[#FFD700]/20 rounded-lg text-center border border-[#FFD700]/40">
                                     <p className="text-xs font-bold text-[#543847] mb-2">🏅 10 pts reached</p>
                                     <a
@@ -436,7 +436,7 @@ export default function GameOverlay({
                                 )}
 
                                 {/* Achievement unlocked */}
-                                {justUnlocked20 && (
+                                {justUnlocked10 && (
                                     <div className="mt-3 p-2 bg-[#FFD700]/30 rounded-lg border-2 border-[#FFD700] achievement-glow text-center">
                                         <p className="text-xs font-bold text-[#543847]">
                                             🏅 ACHIEVEMENT UNLOCKED!
