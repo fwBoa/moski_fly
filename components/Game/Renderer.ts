@@ -242,38 +242,60 @@ export function drawPlayer(
     ctx.restore();
 }
 
+export interface BgTransition {
+    oldTier: number;
+    currentTier: number;
+    progress: number;
+}
+
 export function drawBackground(
     ctx: CanvasRenderingContext2D,
     backgrounds: HTMLImageElement[],
     width: number,
     height: number,
-    scoreTier: number
+    transition: BgTransition
 ) {
-    const bgIdx = Math.min(scoreTier, backgrounds.length - 1);
-    const bg = backgrounds[bgIdx] || backgrounds[0];
+    const drawSingleBg = (tier: number, alpha: number) => {
+        const bgIdx = Math.min(tier, backgrounds.length - 1);
+        const bg = backgrounds[bgIdx] || backgrounds[0];
 
-    if (bg && bg.complete) {
-        ctx.imageSmoothingEnabled = false;
+        if (bg && bg.complete) {
+            ctx.imageSmoothingEnabled = false;
 
-        // Cover mode: scale to fill canvas while preserving aspect ratio
-        const bgRatio = bg.naturalWidth / bg.naturalHeight;
-        const canvasRatio = width / height;
-        let sx = 0, sy = 0, sw = bg.naturalWidth, sh = bg.naturalHeight;
+            // Cover mode: scale to fill canvas while preserving aspect ratio
+            const bgRatio = bg.naturalWidth / bg.naturalHeight;
+            const canvasRatio = width / height;
+            let sx = 0, sy = 0, sw = bg.naturalWidth, sh = bg.naturalHeight;
 
-        if (canvasRatio > bgRatio) {
-            const visibleHeight = bg.naturalWidth / canvasRatio;
-            sy = (bg.naturalHeight - visibleHeight) / 2;
-            sh = visibleHeight;
+            if (canvasRatio > bgRatio) {
+                const visibleHeight = bg.naturalWidth / canvasRatio;
+                sy = (bg.naturalHeight - visibleHeight) / 2;
+                sh = visibleHeight;
+            } else {
+                const visibleWidth = bg.naturalHeight * canvasRatio;
+                sx = (bg.naturalWidth - visibleWidth) / 2;
+                sw = visibleWidth;
+            }
+
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, width, height);
+            ctx.globalAlpha = 1.0;
         } else {
-            const visibleWidth = bg.naturalHeight * canvasRatio;
-            sx = (bg.naturalWidth - visibleWidth) / 2;
-            sw = visibleWidth;
+            // Fallback solid color while loading
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, width, height);
+            ctx.globalAlpha = 1.0;
         }
+    };
 
-        ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, width, height);
+    if (transition.progress > 0) {
+        // Draw old bg full opacity
+        drawSingleBg(transition.oldTier, 1.0);
+        // Draw new bg fading in
+        drawSingleBg(transition.currentTier, transition.progress);
     } else {
-        // Fallback solid color while loading
-        ctx.fillStyle = '#87CEEB';
-        ctx.fillRect(0, 0, width, height);
+        // Draw current bg full opacity
+        drawSingleBg(transition.currentTier, 1.0);
     }
 }

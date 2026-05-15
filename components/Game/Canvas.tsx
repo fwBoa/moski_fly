@@ -22,7 +22,7 @@ import {
 import { resumeAudio, playCoinSound, playDiamondSound, playPipeSound, playFlapSound, playGameOverSound, bgMusic } from './SoundManager';
 import { loadStats, saveGameResult, resetStats, GameStats } from './StatsManager';
 import { getPseudo, savePseudo, submitScore, initAuth } from './LeaderboardManager';
-import { FlyingCoin, drawBackground, drawPipes, drawGround, drawCoins, drawPlayer } from './Renderer';
+import { FlyingCoin, BgTransition, drawBackground, drawPipes, drawGround, drawCoins, drawPlayer } from './Renderer';
 import { getDynamicConfig } from './difficulty';
 import DevPanel from './DevPanel';
 import GameOverlay from './GameOverlay';
@@ -64,6 +64,9 @@ export default function Canvas({ devMode = false }: CanvasProps) {
 
     // Flying coins animation
     const flyingCoinsRef = useRef<FlyingCoin[]>([]);
+    
+    // Background transition
+    const bgTransitionRef = useRef<BgTransition>({ oldTier: 0, currentTier: 0, progress: 0 });
 
     // Game objects (using refs for real-time updates in animation loop)
     const playerRef = useRef<Player | null>(null);
@@ -162,6 +165,7 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         coinComboRef.current = 0;
         pipeScoreRef.current = 0;
         coinScoreRef.current = 0;
+        bgTransitionRef.current = { oldTier: 0, currentTier: 0, progress: 0 };
         setPipeScore(0);
         setCoinScore(0);
         setCoinCombo(0);
@@ -342,10 +346,25 @@ export default function Canvas({ devMode = false }: CanvasProps) {
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
 
-        // Select and draw background based on score tier
+        // Select and draw background based on score tier with smooth transition
         const currentTotal = pipeScoreRef.current + coinScoreRef.current;
-        const scoreTier = Math.floor(currentTotal / 100);
-        drawBackground(ctx, backgroundsRef.current, width, height, scoreTier);
+        const targetTier = Math.floor(currentTotal / 100);
+
+        if (targetTier > bgTransitionRef.current.currentTier && bgTransitionRef.current.progress === 0) {
+            bgTransitionRef.current.oldTier = bgTransitionRef.current.currentTier;
+            bgTransitionRef.current.currentTier = targetTier;
+            bgTransitionRef.current.progress = 0.01; // Start transition
+        }
+
+        if (bgTransitionRef.current.progress > 0) {
+            // 2 seconds transition (deltaTime is ~16.67ms, so 16.67 * 0.0005 ≈ 0.008 per frame)
+            bgTransitionRef.current.progress += (deltaTime || 16.67) * 0.0005;
+            if (bgTransitionRef.current.progress >= 1) {
+                bgTransitionRef.current.progress = 0;
+            }
+        }
+
+        drawBackground(ctx, backgroundsRef.current, width, height, bgTransitionRef.current);
 
         // Draw pipes
         drawPipes(ctx, pipesRef.current, currentConfig, width, height, groundHeight);
