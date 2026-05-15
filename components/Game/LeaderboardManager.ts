@@ -19,7 +19,7 @@ export interface LeaderboardEntry {
     createdAt: Date | null;
 }
 
-const COLLECTION = 'leaderboard_v2';
+const COLLECTION = 'leaderboard';
 const PSEUDO_KEY = 'moski_pseudo';
 const BEST_SUBMITTED_KEY = 'moski_best_submitted_v2';
 
